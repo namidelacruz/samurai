@@ -322,17 +322,37 @@ PAGES = [
 
 GROUPS = [("system", "系", "SYSTEM"), ("desktop", "机", "DESKTOP"), ("addons", "追", "ADD-ONS"), ("advanced", "深", "ADVANCED"), ("foot", "他", "OTHER")]
 
+# Settings that are stored and shown but that nothing acts on yet. The hub greys them out and
+# says so, instead of offering a switch that does nothing. Remove a key here when it is built.
+SOON = {
+    "displays.new_windows", "net.auto_repair", "net.hotspot.ssid", "net.hotspot.password", "gpu.mode",
+    "gpu.passthrough.enabled", "shot.freeze", "dictate.enabled", "dictate.engine", "dictate.language",
+    "dictate.api_key", "region.units", "region.weather_place", "frame.titles", "frame.bar.tray",
+    "frame.bar.media", "frame.osd", "start.search.files", "start.confirm_power", "widgets.calendar.enabled",
+    "widgets.calendar.place", "widgets.system.enabled", "widgets.system.place", "widgets.weather.enabled",
+    "widgets.weather.place", "widgets.viz.enabled", "widgets.viz.style", "widgets.viz.bands", "widgets.viz.fps",
+    "lock.show_notices", "lock.media", "idle.dim", "greeter.match_lock", "motion.shell", "incognito.clicks_in_place",
+}
+
 def main():
     out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "shell", "settings.schema.json")
     keys = [i["key"] for p in PAGES for s in p["sections"] for i in s["items"] if i["key"]]
     dup = {k for k in keys if keys.count(k) > 1}
     if dup:
         sys.exit("duplicate keys: %s" % sorted(dup))
+    unknown = SOON - set(keys)
+    if unknown:
+        sys.exit("SOON names settings that do not exist: %s" % sorted(unknown))
+    for p in PAGES:
+        for sct in p["sections"]:
+            for i in sct["items"]:
+                if i["key"] in SOON:
+                    i["soon"] = True
     doc = dict(version=1, groups=[dict(id=g, jp=j, en=e) for g, j, e in GROUPS], pages=PAGES)
     with open(out, "w", encoding="utf-8") as f:
         json.dump(doc, f, ensure_ascii=False, indent=1)
         f.write("\n")
-    print("%d pages, %d settings -> %s" % (len(PAGES), len(keys), os.path.normpath(out)))
+    print("%d pages, %d settings (%d not built yet) -> %s" % (len(PAGES), len(keys), len(SOON), os.path.normpath(out)))
 
 if __name__ == "__main__":
     main()

@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Samurai
+Comment=The white-frame desktop (Hyprland + Quickshell)
+Exec=start-hyprland
+Type=Application
+DesktopNames=Hyprland

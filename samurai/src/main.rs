@@ -63,6 +63,7 @@ fn run(a: &[&str]) -> Result<String, String> {
         ["binds", "list"] => Ok(binds::list_json().to_string()),
         ["binds", "check", keys] => Ok(binds::check(keys).to_string()),
         ["seal", "show"] => Ok(seal::show().to_string()),
+        ["seal", "decoy"] => seal::decoy().map(|_| "decoy drawn".to_string()),
         ["seal", "forge"] => seal::forge(false).map(|v| v.to_string()),
         ["seal", "forge", "--erase-current"] => seal::forge(true).map(|v| v.to_string()),
         ["incognito", arg] => misc::incognito(arg).map(|on| if on { "on".into() } else { "off".into() }),

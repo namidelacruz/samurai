@@ -49,7 +49,8 @@
         "external",
         "primary"
        ],
-       "use": "hypr"
+       "use": "hypr",
+       "soon": true
       },
       {
        "key": "displays.vrr",
@@ -489,7 +490,8 @@
        "label": "Repair by itself when a connection drops",
        "type": "toggle",
        "default": true,
-       "use": "services"
+       "use": "services",
+       "soon": true
       },
       {
        "key": "net.show_log",
@@ -509,7 +511,8 @@
        "label": "Hotspot name",
        "type": "text",
        "default": "samurai",
-       "use": "services"
+       "use": "services",
+       "soon": true
       },
       {
        "key": "net.hotspot.password",
@@ -517,7 +520,8 @@
        "type": "text",
        "default": "",
        "secret": true,
-       "use": "services"
+       "use": "services",
+       "soon": true
       }
      ]
     }
@@ -545,7 +549,8 @@
         "integrated",
         "discrete"
        ],
-       "use": "hypr"
+       "use": "hypr",
+       "soon": true
       },
       {
        "key": "gpu.tearing",
@@ -578,7 +583,8 @@
        "type": "toggle",
        "default": false,
        "use": "services",
-       "danger": true
+       "danger": true,
+       "soon": true
       },
       {
        "key": "",
@@ -718,7 +724,8 @@
        "label": "Freeze the screen while selecting",
        "type": "toggle",
        "default": true,
-       "use": "services"
+       "use": "services",
+       "soon": true
       }
      ]
     }
@@ -740,7 +747,8 @@
        "label": "Voice typing",
        "type": "toggle",
        "default": false,
-       "use": "services"
+       "use": "services",
+       "soon": true
       },
       {
        "key": "dictate.engine",
@@ -752,14 +760,16 @@
         "local-accurate",
         "remote-api"
        ],
-       "use": "services"
+       "use": "services",
+       "soon": true
       },
       {
        "key": "dictate.language",
        "label": "Language",
        "type": "text",
        "default": "en",
-       "use": "services"
+       "use": "services",
+       "soon": true
       },
       {
        "key": "dictate.api_key",
@@ -767,7 +777,8 @@
        "type": "text",
        "default": "",
        "secret": true,
-       "use": "services"
+       "use": "services",
+       "soon": true
       },
       {
        "key": "",
@@ -871,14 +882,16 @@
         "metric",
         "imperial"
        ],
-       "use": "shell"
+       "use": "shell",
+       "soon": true
       },
       {
        "key": "region.weather_place",
        "label": "Weather location (empty = off)",
        "type": "text",
        "default": "",
-       "use": "shell"
+       "use": "shell",
+       "soon": true
       }
      ]
     }
@@ -1302,7 +1315,8 @@
        "label": "Title strip on windows",
        "type": "toggle",
        "default": true,
-       "use": "hypr"
+       "use": "hypr",
+       "soon": true
       },
       {
        "key": "frame.cuts",
@@ -1413,14 +1427,16 @@
        "label": "Tray icons",
        "type": "toggle",
        "default": true,
-       "use": "shell"
+       "use": "shell",
+       "soon": true
       },
       {
        "key": "frame.bar.media",
        "label": "Now playing",
        "type": "toggle",
        "default": false,
-       "use": "shell"
+       "use": "shell",
+       "soon": true
       }
      ]
     },
@@ -1515,7 +1531,8 @@
        "label": "Volume and brightness overlay",
        "type": "toggle",
        "default": true,
-       "use": "shell"
+       "use": "shell",
+       "soon": true
       }
      ]
     }
@@ -1544,7 +1561,8 @@
        "label": "Search files",
        "type": "toggle",
        "default": true,
-       "use": "shell"
+       "use": "shell",
+       "soon": true
       },
       {
        "key": "start.search.settings",
@@ -1599,7 +1617,8 @@
        "label": "Ask before shutting down",
        "type": "toggle",
        "default": true,
-       "use": "shell"
+       "use": "shell",
+       "soon": true
       }
      ]
     }
@@ -1670,7 +1689,8 @@
        "label": "Calendar",
        "type": "toggle",
        "default": false,
-       "use": "shell"
+       "use": "shell",
+       "soon": true
       },
       {
        "key": "widgets.calendar.place",
@@ -1683,7 +1703,8 @@
         "bottom-left",
         "bottom-right"
        ],
-       "use": "shell"
+       "use": "shell",
+       "soon": true
       }
      ]
     },
@@ -1696,7 +1717,8 @@
        "label": "System readout",
        "type": "toggle",
        "default": false,
-       "use": "shell"
+       "use": "shell",
+       "soon": true
       },
       {
        "key": "widgets.system.place",
@@ -1709,7 +1731,8 @@
         "bottom-left",
         "bottom-right"
        ],
-       "use": "shell"
+       "use": "shell",
+       "soon": true
       }
      ]
     },
@@ -1722,7 +1745,8 @@
        "label": "Weather",
        "type": "toggle",
        "default": false,
-       "use": "shell"
+       "use": "shell",
+       "soon": true
       },
       {
        "key": "widgets.weather.place",
@@ -1735,7 +1759,8 @@
         "bottom-left",
         "bottom-right"
        ],
-       "use": "shell"
+       "use": "shell",
+       "soon": true
       }
      ]
     },
@@ -1748,7 +1773,8 @@
        "label": "Sound visualizer",
        "type": "toggle",
        "default": false,
-       "use": "shell"
+       "use": "shell",
+       "soon": true
       },
       {
        "key": "widgets.viz.style",
@@ -1760,7 +1786,8 @@
         "line",
         "blocks"
        ],
-       "use": "shell"
+       "use": "shell",
+       "soon": true
       },
       {
        "key": "widgets.viz.bands",
@@ -1770,7 +1797,8 @@
        "min": 8,
        "max": 96,
        "step": 4,
-       "use": "shell"
+       "use": "shell",
+       "soon": true
       },
       {
        "key": "widgets.viz.fps",
@@ -1782,7 +1810,8 @@
         "45",
         "60"
        ],
-       "use": "shell"
+       "use": "shell",
+       "soon": true
       }
      ]
     }
@@ -1823,14 +1852,16 @@
        "label": "Show notice count",
        "type": "toggle",
        "default": false,
-       "use": "shell"
+       "use": "shell",
+       "soon": true
       },
       {
        "key": "lock.media",
        "label": "Media keys work when locked",
        "type": "toggle",
        "default": true,
-       "use": "hypr"
+       "use": "hypr",
+       "soon": true
       }
      ]
     },
@@ -1846,7 +1877,8 @@
        "min": 0,
        "max": 120,
        "step": 1,
-       "use": "services"
+       "use": "services",
+       "soon": true
       },
       {
        "key": "idle.lock",
@@ -1896,7 +1928,8 @@
        "label": "Login screen matches the lock screen",
        "type": "toggle",
        "default": true,
-       "use": "services"
+       "use": "services",
+       "soon": true
       },
       {
        "key": "greeter.show_users",
@@ -2006,7 +2039,8 @@
        "label": "Animate the frame's panels",
        "type": "toggle",
        "default": false,
-       "use": "shell"
+       "use": "shell",
+       "soon": true
       }
      ]
     }
@@ -2482,7 +2516,8 @@
        "label": "Controls stay where they were (only the drawing moves)",
        "type": "toggle",
        "default": false,
-       "use": "shell"
+       "use": "shell",
+       "soon": true
       },
       {
        "key": "",
