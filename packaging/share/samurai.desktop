@@ -1,6 +1,6 @@
 [Desktop Entry]
 Name=Samurai
-Comment=The white-frame desktop (Hyprland + Quickshell)
-Exec=start-hyprland
+Comment=The white-frame desktop (niri + Quickshell)
+Exec=/opt/samurai/bin/samurai-session
 Type=Application
-DesktopNames=Hyprland
+DesktopNames=niri

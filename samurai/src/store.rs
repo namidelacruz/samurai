@@ -23,10 +23,9 @@ pub fn state_dir() -> PathBuf {
         std::env::var_os("XDG_STATE_HOME").filter(|v| !v.is_empty()).map(PathBuf::from).unwrap_or_else(|| home().join(".local/state")).join("samurai")
     })
 }
-pub fn hypr_dir() -> PathBuf {
-    std::env::var_os("SAMURAI_HYPR").map(PathBuf::from).unwrap_or_else(|| {
-        std::env::var_os("XDG_CONFIG_HOME").filter(|v| !v.is_empty()).map(PathBuf::from).unwrap_or_else(|| home().join(".config")).join("hypr")
-    })
+/// Samurai's own niri config folder (never ~/.config/niri)
+pub fn niri_dir() -> PathBuf {
+    std::env::var_os("SAMURAI_NIRI").map(PathBuf::from).unwrap_or_else(|| config_dir().join("niri"))
 }
 pub fn settings_file() -> PathBuf {
     config_dir().join("settings.json")
@@ -220,13 +219,6 @@ mod t {
         assert!(its.len() > 150, "every page's settings are there");
         for (i, _) in &its {
             assert!(check(i, &i["default"]).is_ok(), "default of {} passes its own check", i["key"]);
-        }
-        // every Hyprland option the schema writes exists in Hyprland 0.57
-        let known = include_str!("../../docs/hyprland-0.57-options.txt");
-        for (i, _) in &its {
-            if let Some(h) = i["hl"].as_str() {
-                assert!(known.lines().any(|l| l == h), "{h} is a Hyprland option");
-            }
         }
     }
 

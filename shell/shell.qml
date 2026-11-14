@@ -6,7 +6,6 @@
 import QtQuick
 import Quickshell
 import Quickshell.Wayland
-import Quickshell.Hyprland
 import Quickshell.Services.Pam
 import "lib"
 import "frame"
@@ -22,7 +21,7 @@ ShellRoot {
         Scope {
             id: scr
             required property var modelData
-            readonly property bool here: Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name === modelData.name : true
+            readonly property bool here: kernel.focusedOutput === "" || kernel.focusedOutput === modelData.name
 
             // ── wall: under everything ──
             PanelWindow {
@@ -183,6 +182,6 @@ ShellRoot {
     // ── idle: lock, screens off, sleep (minutes; 0 = never) ──
     IdleMonitor { timeout: (kernel.v("idle.lock") || 0) * 60; enabled: (kernel.v("idle.lock") || 0) > 0; onIsIdleChanged: if (isIdle) kernel.locked = true }
     IdleMonitor { timeout: (kernel.v("idle.screen_off") || 0) * 60; enabled: (kernel.v("idle.screen_off") || 0) > 0
-                  onIsIdleChanged: kernel.run(["hyprctl", "dispatch", "hl.dsp.dpms({ action = \"" + (isIdle ? "off" : "on") + "\" })"]) }
+                  onIsIdleChanged: kernel.run(["niri", "msg", "action", isIdle ? "power-off-monitors" : "power-on-monitors"]) }
     IdleMonitor { timeout: (kernel.v("idle.suspend") || 0) * 60; enabled: (kernel.v("idle.suspend") || 0) > 0; onIsIdleChanged: if (isIdle) kernel.power("sleep") }
 }

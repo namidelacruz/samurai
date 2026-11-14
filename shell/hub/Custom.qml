@@ -92,8 +92,8 @@ Column {
             Field { id: bk; core: c.core; width: 210; placeholder: "SUPER + SHIFT + T"
                 onEdited: function(t) { if (t.trim() === "") { c.check = null; return } core.run(["samurai", "binds", "check", t], function(o) { try { c.check = JSON.parse(o) } catch (e) { c.check = null } }) } }
             Cell { core: c.core; box: true; width: 124; text: ba.list[ba.at].toUpperCase(); property alias at: ba.at; onClicked: ba.at = (ba.at + 1) % ba.list.length
-                   Item { id: ba; property int at: 0; property var list: ["spawn", "frame", "window", "focus", "move", "workspace", "window_to", "special", "layout", "nothing"] } }
-            Field { id: bg; core: c.core; width: 190; placeholder: ["command", "start|quick|widgets|settings|keys|base|incognito|lock|power", "close|float|fullscreen|maximize|minimize|restore|next|prev", "left|right|up|down", "left|right|up|down", "1…10 · e+1 · e-1", "1…10 · e+1 · e-1", "name", "master|dwindle|…", ""][ba.at] }
+                   Item { id: ba; property int at: 0; property var list: ["spawn", "frame", "window", "focus", "move", "workspace", "window_to", "niri"] } }
+            Field { id: bg; core: c.core; width: 190; placeholder: ["command", "start|quick|widgets|settings|keys|base|incognito|lock|power", "close|float|fullscreen|maximize|center|minimize|restore|next|prev", "left|right|up|down", "left|right|up|down", "1…10 · next · prev", "1…10 · next · prev", "one niri action, e.g. set-column-width \"-10%\""][ba.at] }
             Field { id: bn; core: c.core; width: Math.max(120, c.width - 40 - 210 - 124 - 190 - 96); placeholder: "what it does" }
             Cell { core: c.core; box: true; filled: true; width: 96; pad: 0; kanji: "加"; kanjiSize: core.px; text: "ADD"
                 readonly property bool clash: c.check !== null && !!c.check.conflicts && c.check.conflicts.length > 0
@@ -162,7 +162,18 @@ Column {
 
     // ═════ DISPLAYS ═════ what is plugged in now
     property var monitors: []
-    function mons() { core.run(["hyprctl", "-j", "monitors", "all"], function(o) { try { monitors = JSON.parse(o) } catch (e) { monitors = [] } }) }
+    function mons() { core.run(["niri", "msg", "-j", "outputs"], function(o) {
+        try {
+            var all = JSON.parse(o), list = []
+            Object.keys(all).sort().forEach(function(k) {
+                var m = all[k], mode = m.current_mode !== null && m.current_mode !== undefined && m.modes ? m.modes[m.current_mode] : null, l = m.logical
+                list.push({ name: m.name || k, description: [m.make, m.model].filter(function(x) { return x && x !== "Unknown" }).join(" "),
+                            mode: mode ? mode.width + "×" + mode.height + " @ " + Math.round(mode.refresh_rate / 1000) : "off",
+                            place: l ? "×" + l.scale + " · " + l.x + "," + l.y : "" })
+            })
+            monitors = list
+        } catch (e) { monitors = [] }
+    }) }
     Column {
         visible: c.page === "displays"; width: parent.width
         Repeater {
@@ -172,7 +183,7 @@ Column {
                 width: c.width; height: core.hit + 12
                 Txt { core: c.core; x: 20; height: parent.height; heavy: true; text: modelData.name }
                 Txt { core: c.core; x: 140; width: parent.width - 420; height: parent.height; text: (modelData.description || "") }
-                Txt { core: c.core; anchors.right: parent.right; anchors.rightMargin: 20; height: parent.height; text: modelData.width + "×" + modelData.height + " @ " + Math.round(modelData.refreshRate) + " · ×" + modelData.scale + " · " + modelData.x + "," + modelData.y }
+                Txt { core: c.core; anchors.right: parent.right; anchors.rightMargin: 20; height: parent.height; text: modelData.mode + (modelData.place ? " · " + modelData.place : "") }
                 Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: core.line; color: core.dim; opacity: 0.5 }
             }
         }

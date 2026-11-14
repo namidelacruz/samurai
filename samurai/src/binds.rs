@@ -42,6 +42,12 @@ pub const BUILTIN: &[Builtin] = &[
     b("win.restore", "MOD + SHIFT + M", "window", "restore", "Bring the last minimized window back", "windows", ""),
     b("win.next", "MOD + TAB", "window", "next", "Next window", "windows", ""),
     b("win.prev", "MOD + SHIFT + TAB", "window", "prev", "Previous window", "windows", ""),
+    b("win.overview", "MOD + O", "niri", "toggle-overview", "Overview of every workspace", "windows", ""),
+    b("win.width", "MOD + R", "niri", "switch-preset-column-width", "Next window width", "windows", ""),
+    b("win.shrink", "MOD + MINUS", "niri", "set-column-width \"-10%\"", "Narrower", "windows", "repeat"),
+    b("win.grow", "MOD + EQUAL", "niri", "set-column-width \"+10%\"", "Wider", "windows", "repeat"),
+    b("win.stack_left", "MOD + BRACKETLEFT", "niri", "consume-or-expel-window-left", "Stack with / split from the left column", "windows", ""),
+    b("win.stack_right", "MOD + BRACKETRIGHT", "niri", "consume-or-expel-window-right", "Stack with / split from the right column", "windows", ""),
     b("focus.left", "MOD + H", "focus", "left", "Focus left", "windows", ""),
     b("focus.right", "MOD + L", "focus", "right", "Focus right", "windows", ""),
     b("focus.up", "MOD + K", "focus", "up", "Focus up", "windows", ""),
@@ -149,7 +155,10 @@ pub fn resolve() -> Vec<Bind> {
         if replacing.contains(&k) {
             return;
         }
-        out.push(Bind { id, keys: k, action: action.into(), arg, name, group: group.into(), flags: flags.into(), custom: false, held: None });
+        // two built-ins can land on the same keys (a moved bind, or Alt as the main modifier
+        // folding MOD + ALT + L onto MOD + L): the earlier one keeps them, the later is held
+        let held = out.iter().find(|o| o.keys == k && o.held.is_none()).map(|o| format!("{k} already does \"{}\" (built-in {}); move one of them", o.name, o.id));
+        out.push(Bind { id, keys: k, action: action.into(), arg, name, group: group.into(), flags: flags.into(), custom: false, held });
     };
     for x in BUILTIN {
         builtin(x.id.into(), x.keys, x.action, x.arg.into(), x.name.into(), x.group, x.flags);
@@ -168,7 +177,7 @@ pub fn resolve() -> Vec<Bind> {
                 if let Some(o) = out.iter().find(|o| o.keys == k && o.held.is_none()) {
                     bind.held = Some(if o.custom { format!("the same keys as your bind \"{}\"", o.name) } else { format!("{k} already does \"{}\" (built-in {})", o.name, o.id) });
                 }
-                if let Err(e) = lua_for(&bind.action, &bind.arg) {
+                if let Err(e) = kdl_for(&bind.action, &bind.arg).and_then(|a| kdl_keys(&bind.keys).map(|_| a).ok_or("niri has no such key or button".to_string())) {
                     bind.held = Some(e);
                 }
                 bind.keys = k;
@@ -191,7 +200,7 @@ pub fn list_json() -> Value {
     Value::Array(resolve().iter().map(|b| json!({ "id": b.id, "keys": b.keys, "action": b.action, "arg": b.arg, "name": b.name, "group": b.group, "flags": b.flags, "custom": b.custom, "held": b.held })).collect())
 }
 
-pub fn lua_str(s: &str) -> String {
+pub fn kstr(s: &str) -> String {
     let mut o = String::from("\"");
     for c in s.chars() {
         match c {
@@ -206,66 +215,120 @@ pub fn lua_str(s: &str) -> String {
     o
 }
 
-fn ws_arg(arg: &str) -> Result<String, String> {
-    if let Ok(n) = arg.parse::<u32>() {
-        return if (1..=99).contains(&n) { Ok(n.to_string()) } else { Err(format!("workspace {n} is out of range")) };
+/// "SUPER + SHIFT + T" -> "Super+Shift+T"; "mouse:272" -> "MouseLeft". None: niri has no such trigger.
+pub fn kdl_keys(keys: &str) -> Option<String> {
+    let mut out: Vec<String> = vec![];
+    for part in keys.split('+').map(str::trim) {
+        out.push(match part {
+            "SUPER" => "Super".into(),
+            "CTRL" => "Ctrl".into(),
+            "ALT" => "Alt".into(),
+            "SHIFT" => "Shift".into(),
+            "mouse:272" => "MouseLeft".into(),
+            "mouse:273" => "MouseRight".into(),
+            "mouse:274" => "MouseMiddle".into(),
+            "mouse:275" => "MouseBack".into(),
+            "mouse:276" => "MouseForward".into(),
+            k if k.contains(':') => return None,
+            k => {
+                // niri reads key names without regard to case; a few of ours are spelled differently
+                let up = k.to_ascii_uppercase();
+                match up.as_str() {
+                    "MOUSELEFT" => "MouseLeft".into(),
+                    "MOUSERIGHT" => "MouseRight".into(),
+                    "MOUSEMIDDLE" => "MouseMiddle".into(),
+                    "MOUSEBACK" => "MouseBack".into(),
+                    "MOUSEFORWARD" => "MouseForward".into(),
+                    "WHEELSCROLLUP" => "WheelScrollUp".into(),
+                    "WHEELSCROLLDOWN" => "WheelScrollDown".into(),
+                    "ENTER" => "Return".into(),
+                    "ESC" => "Escape".into(),
+                    "PGUP" => "Page_Up".into(),
+                    "PGDN" | "PGDOWN" => "Page_Down".into(),
+                    "DEL" => "Delete".into(),
+                    _ => k.to_string(),
+                }
+            }
+        });
     }
-    let ok = arg.len() <= 40 && arg.chars().all(|c| c.is_ascii_alphanumeric() || "+-:_".contains(c)) && !arg.is_empty();
-    ok.then(|| lua_str(arg)).ok_or(format!("\"{arg}\" is not a workspace"))
+    (!out.is_empty()).then(|| out.join("+"))
 }
 
-/// The Lua dispatcher expression for an action (Hyprland 0.55+ `hl.dsp.*`).
-pub fn lua_for(action: &str, arg: &str) -> Result<String, String> {
-    let dir = |a: &str| ["left", "right", "up", "down"].contains(&a).then(|| a.to_string()).ok_or(format!("\"{a}\" is not a direction"));
+/// The niri action for a bind, as it is written inside `{ … }` (niri 25.11+).
+pub fn kdl_for(action: &str, arg: &str) -> Result<String, String> {
+    let ws = |arg: &str| -> Result<String, String> {
+        if let Ok(n) = arg.parse::<u32>() {
+            return if (1..=99).contains(&n) { Ok(n.to_string()) } else { Err(format!("workspace {n} is out of range")) };
+        }
+        let ok = !arg.is_empty() && arg.len() <= 40 && arg.chars().all(|c| c.is_ascii_alphanumeric() || "-_".contains(c));
+        ok.then(|| kstr(arg)).ok_or(format!("\"{arg}\" is not a workspace"))
+    };
     Ok(match action {
         "spawn" => {
             if arg.is_empty() {
                 return Err("spawn needs a command".into());
             }
-            let cmd = match arg {
-                "$terminal" => "samurai open terminal",
-                "$files" => "samurai open files",
-                "$browser" => "samurai open browser",
-                a => a,
-            };
-            format!("hl.dsp.exec_cmd({})", lua_str(cmd))
+            match arg {
+                "$terminal" => "spawn \"samurai\" \"open\" \"terminal\"".into(),
+                "$files" => "spawn \"samurai\" \"open\" \"files\"".into(),
+                "$browser" => "spawn \"samurai\" \"open\" \"browser\"".into(),
+                a => format!("spawn-sh {}", kstr(a)),
+            }
         }
         "frame" => {
-            let ok = ["start", "quick", "widgets", "settings", "keys", "base", "incognito", "lock", "power"].contains(&arg) || arg.starts_with("settings:");
+            let ok = ["start", "quick", "widgets", "settings", "keys", "base", "incognito", "lock", "power"].contains(&arg)
+                || arg.strip_prefix("settings:").is_some_and(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_lowercase()));
             if !ok {
                 return Err(format!("\"{arg}\" is not a frame panel"));
             }
-            format!("hl.dsp.exec_cmd({})", lua_str(&format!("samurai shell {arg}")))
+            format!("spawn \"samurai\" \"shell\" {}", kstr(arg))
         }
         "window" => match arg {
-            "close" => "hl.dsp.window.close()".into(),
-            "kill" => "hl.dsp.window.kill()".into(),
-            "float" => "hl.dsp.window.float({ action = \"toggle\" })".into(),
-            "fullscreen" => "hl.dsp.window.fullscreen({ mode = \"fullscreen\" })".into(),
-            "maximize" => "hl.dsp.window.fullscreen({ mode = \"maximized\" })".into(),
-            "pin" => "hl.dsp.window.pin()".into(),
-            "center" => "hl.dsp.window.center()".into(),
-            "pseudo" => "hl.dsp.window.pseudo()".into(),
-            "next" => "hl.dsp.window.cycle_next({ next = true })".into(),
-            "prev" => "hl.dsp.window.cycle_next({ next = false })".into(),
-            "minimize" => format!("hl.dsp.exec_cmd({})", lua_str("samurai win minimize")),
-            "restore" => format!("hl.dsp.exec_cmd({})", lua_str("samurai win restore")),
+            "close" => "close-window".into(),
+            "float" => "toggle-window-floating".into(),
+            "fullscreen" => "fullscreen-window".into(),
+            "maximize" => "maximize-column".into(),
+            "center" => "center-column".into(),
+            "next" => "focus-column-right-or-first".into(),
+            "prev" => "focus-column-left-or-last".into(),
+            "minimize" => "spawn \"samurai\" \"win\" \"minimize\"".into(),
+            "restore" => "spawn \"samurai\" \"win\" \"restore\"".into(),
             a => return Err(format!("\"{a}\" is not a window action")),
         },
-        "focus" => format!("hl.dsp.focus({{ direction = \"{}\" }})", dir(arg)?),
-        "move" => format!("hl.dsp.window.move({{ direction = \"{}\" }})", dir(arg)?),
-        "workspace" => format!("hl.dsp.focus({{ workspace = {} }})", ws_arg(arg)?),
-        "window_to" => format!("hl.dsp.window.move({{ workspace = {} }})", ws_arg(arg)?),
-        "window_to_quiet" => format!("hl.dsp.window.move({{ workspace = {}, follow = false }})", ws_arg(arg)?),
-        "special" => format!("hl.dsp.workspace.toggle_special({})", lua_str(arg)),
-        "layout" => format!("hl.dsp.layout({})", lua_str(arg)),
-        "nothing" => "hl.dsp.no_op()".into(),
-        // an expert's own dispatcher expression: only a single hl.dsp call, nothing else
-        "lua" => {
+        "focus" => match arg {
+            "left" => "focus-column-left".into(),
+            "right" => "focus-column-right".into(),
+            "up" => "focus-window-or-workspace-up".into(),
+            "down" => "focus-window-or-workspace-down".into(),
+            a => return Err(format!("\"{a}\" is not a direction")),
+        },
+        "move" => match arg {
+            "left" => "move-column-left".into(),
+            "right" => "move-column-right".into(),
+            "up" => "move-window-up-or-to-workspace-up".into(),
+            "down" => "move-window-down-or-to-workspace-down".into(),
+            a => return Err(format!("\"{a}\" is not a direction")),
+        },
+        "workspace" => match arg {
+            "e+1" | "next" | "down" => "focus-workspace-down".into(),
+            "e-1" | "prev" | "up" => "focus-workspace-up".into(),
+            a => format!("focus-workspace {}", ws(a)?),
+        },
+        "window_to" => match arg {
+            "e+1" | "next" | "down" => "move-column-to-workspace-down".into(),
+            "e-1" | "prev" | "up" => "move-column-to-workspace-up".into(),
+            a => format!("move-column-to-workspace {}", ws(a)?),
+        },
+        // one niri action written out by hand, e.g.  set-column-width "-10%"
+        "niri" => {
             let a = arg.trim();
-            let safe = a.starts_with("hl.dsp.") && a.ends_with(')') && !a.contains(';') && !a.contains('\n') && !a.contains("os.") && !a.contains("io.") && !a.contains("require") && !a.contains("load");
+            let safe = a.starts_with(|c: char| c.is_ascii_lowercase())
+                && a.len() <= 120
+                && a.chars().all(|c| c.is_ascii_alphanumeric() || " -_\"%+.=#".contains(c))
+                && a.matches('"').count() % 2 == 0
+                && !a.starts_with("spawn");
             if !safe {
-                return Err("a Lua action must be one hl.dsp.…(…) call".into());
+                return Err("a niri action is one action name with its arguments (use the spawn action to run a command)".into());
             }
             a.to_string()
         }
@@ -273,22 +336,20 @@ pub fn lua_for(action: &str, arg: &str) -> Result<String, String> {
     })
 }
 
-/// bind option table from flags ("locked,repeat,release")
-pub fn lua_opts(flags: &str, name: &str) -> String {
-    let mut o: Vec<String> = vec![];
-    for f in flags.split(',').map(str::trim) {
-        match f {
-            "locked" => o.push("locked = true".into()),
-            "repeat" => o.push("repeating = true".into()),
-            "release" => o.push("release = true".into()),
-            "passthrough" => o.push("non_consuming = true".into()),
-            _ => {}
-        }
+/// bind properties from flags ("locked,repeat") and the name shown in niri's own hotkey overlay
+pub fn kdl_props(flags: &str, name: &str) -> String {
+    let has = |f: &str| flags.split(',').any(|x| x.trim() == f);
+    let mut o = String::new();
+    if !has("repeat") {
+        o.push_str(" repeat=false");
+    }
+    if has("locked") {
+        o.push_str(" allow-when-locked=true");
     }
     if !name.is_empty() {
-        o.push(format!("description = {}", lua_str(name)));
+        o.push_str(&format!(" hotkey-overlay-title={}", kstr(name)));
     }
-    if o.is_empty() { String::new() } else { format!(", {{ {} }}", o.join(", ")) }
+    o
 }
 
 #[cfg(test)]
@@ -308,22 +369,26 @@ mod t {
     }
 
     #[test]
-    fn every_builtin_has_valid_lua_and_unique_keys() {
+    fn every_builtin_has_a_niri_action_and_unique_keys() {
         let mut seen = std::collections::HashSet::new();
         for x in BUILTIN {
-            assert!(lua_for(x.action, x.arg).is_ok(), "{}", x.id);
+            assert!(kdl_for(x.action, x.arg).is_ok(), "{}", x.id);
+            assert!(kdl_keys(&canon(x.keys, "SUPER").unwrap()).is_some(), "{}", x.id);
             assert!(seen.insert(canon(x.keys, "SUPER").unwrap()), "{} reuses keys", x.id);
         }
     }
 
     #[test]
-    fn actions_cannot_smuggle_lua() {
-        assert!(lua_for("lua", "hl.dsp.window.pin()").is_ok());
-        for bad in ["os.execute('x')", "hl.dsp.exit(); os.exit()", "hl.dsp.exec_cmd(io.read())", "require('x')"] {
-            assert!(lua_for("lua", bad).is_err(), "{bad}");
+    fn actions_cannot_smuggle_config() {
+        assert_eq!(kdl_for("niri", "set-column-width \"-10%\"").unwrap(), "set-column-width \"-10%\"");
+        for bad in ["close-window; } spawn \"x\"", "close-window }", "spawn \"x\"", "Quit", "a\nb", "set-column-width \"x"] {
+            assert!(kdl_for("niri", bad).is_err(), "{bad}");
         }
-        assert_eq!(lua_for("spawn", "say \"hi\"").unwrap(), "hl.dsp.exec_cmd(\"say \\\"hi\\\"\")");
-        assert!(lua_for("workspace", "2\"}) os.exit() --").is_err());
-        assert!(lua_for("focus", "sideways").is_err());
+        assert_eq!(kdl_for("spawn", "say \"hi\"").unwrap(), "spawn-sh \"say \\\"hi\\\"\"");
+        assert!(kdl_for("workspace", "2\" } spawn \"x").is_err());
+        assert!(kdl_for("frame", "settings:x\" \"y").is_err());
+        assert!(kdl_for("focus", "sideways").is_err());
+        assert_eq!(kdl_keys("SUPER + SHIFT + mouse:275").unwrap(), "Super+Shift+MouseBack");
+        assert!(kdl_keys("SUPER + mouse:999").is_none());
     }
 }

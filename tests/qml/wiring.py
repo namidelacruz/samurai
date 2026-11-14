@@ -3,9 +3,10 @@
 
 The stand-ins (tests/qml/stubs, plus Process/FileView here) have the same names and
 properties as the real ones but no Wayland behind them. Process really runs commands, so
-Core.qml talks to the real `samurai` binary in a throwaway config folder. This catches wrong
+Core.qml talks to the real `samurai` binary in a throwaway config folder, and to a stand-in
+`niri` command (tests/bin/niri) that answers with a fixed set of windows and workspaces. This catches wrong
 ids, bad bindings and broken command wiring. It cannot catch a mismatch with the real
-Quickshell API or anything about how Hyprland draws the windows.
+Quickshell API or anything about how niri draws the windows.
 
     QT_QPA_PLATFORM=offscreen python3 tests/qml/wiring.py path/to/samurai
 """
@@ -20,7 +21,8 @@ ROOT = Path(__file__).resolve().parents[2]
 BIN = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "target/release/samurai").resolve()
 tmp = Path(tempfile.mkdtemp(prefix="samurai-wiring-"))
 os.environ.update(HOME=str(tmp), XDG_CONFIG_HOME=str(tmp / "config"), XDG_STATE_HOME=str(tmp / "state"),
-                  SAMURAI_HYPR=str(tmp / "hypr"), PATH=str(BIN.parent) + ":" + os.environ["PATH"])
+                  PATH=str(ROOT / "tests/bin") + ":" + str(BIN.parent) + ":" + os.environ["PATH"],
+                  NIRI_FAKE_LOG=str(tmp / "niri-actions.log"))
 os.environ.pop("SAMURAI_CONFIG", None); os.environ.pop("SAMURAI_STATE", None)
 
 class StdioCollector(QObject):
@@ -34,7 +36,7 @@ class Process(QObject):
     def __init__(self, p=None):
         super().__init__(p); KEEP.append(self); self._cmd = []; self._run = False; self._out = None; self._err = None; self._stdin = False; self._p = None
     def _set_run(self, v):
-        if v and not self._run:
+        if v and not self._run and self._cmd:
             self._run = True; self._in = None
             QTimer.singleShot(0, lambda: self._go())
     def _go(self):
@@ -44,7 +46,9 @@ class Process(QObject):
             code, out, err = r.returncode, r.stdout, r.stderr
         except (OSError, subprocess.TimeoutExpired) as e:
             code, out, err = 127, "", str(e)
-        if self._out: self._out._t = out
+        if isinstance(self._out, SplitParser):
+            for line in out.splitlines(): self._out.read.emit(line)
+        elif self._out: self._out._t = out
         if self._err: self._err._t = err
         self._run = False; self.exited.emit(code, 0)
     @Slot(str)
@@ -54,6 +58,9 @@ class Process(QObject):
     stdinEnabled = Property(bool, lambda s: s._stdin, lambda s, v: setattr(s, "_stdin", v), notify=changed)
     stdout = Property(QObject, lambda s: s._out, lambda s, v: setattr(s, "_out", v), notify=changed)
     stderr = Property(QObject, lambda s: s._err, lambda s, v: setattr(s, "_err", v), notify=changed)
+
+class SplitParser(QObject):
+    read = Signal(str)
 
 class FileView(QObject):
     fileChanged = Signal(); loaded = Signal(); changed = Signal()
@@ -77,7 +84,7 @@ class IpcHandler(QObject):
     def __init__(self, p=None): super().__init__(p); self._t = ""
     target = Property(str, lambda s: s._t, lambda s, v: setattr(s, "_t", v), notify=changed)
 
-for cls in (StdioCollector, Process, FileView, IpcHandler): qmlRegisterType(cls, "Quickshell.Io", 1, 0, cls.__name__)
+for cls in (StdioCollector, SplitParser, Process, FileView, IpcHandler): qmlRegisterType(cls, "Quickshell.Io", 1, 0, cls.__name__)
 
 # a copy of the shell with the lines only a real layer-shell window understands taken out
 shell = tmp / "shell"; shutil.copytree(ROOT / "shell", shell, symlinks=True)
@@ -128,6 +135,13 @@ def step1():
     check("binds loaded from `samurai binds list`", ev(root, "kernel.binds.length") > 40)
     check("status loaded (base black)", ev(root, "kernel.base") == "black")
     check("apps listed", ev(root, "kernel.apps.length") == 2)
+    check("windows read from niri: one open, one minimized on the shelf",
+          ev(root, "kernel.windows.length === 2 && kernel.windows[0].focused && !kernel.windows[0].minimized && kernel.windows[1].minimized && kernel.activeWorkspace === 1 && kernel.focusedOutput === 'eDP-1'") is True)
+    check("bar workspace 2 maps past the shelf to niri index 3", ev(root, "kernel.workspaceIndex(2)") == 3)
+    rails = find(root, "RailContent")
+    if rails:
+        cells = [c for c in find(rails[0], "Cell") if ev(c, "typeof clicked") == "function"]
+        ev(root, 'kernel.run(["samurai", "win", "restore", "11"])')
     check("bar, rail, wall built for the screen", len(find(root, "BarContent")) == 1 and len(find(root, "RailContent")) == 1 and len(find(root, "WallContent")) == 1)
     ev(root, 'kernel.setValue("look.base", "white")')
     ev(root, 'kernel.toggle("start")')
@@ -136,6 +150,8 @@ def step2():
     check("a change from the shell reaches settings.json", "white" in subprocess.run([str(BIN), "get", "look.base"], capture_output=True, text=True).stdout)
     check("the file watcher brings it back: the ground is now white", ev(root, "kernel.white") is True and ev(root, "kernel.status.base") == "white")
     check("start panel opens", ev(root, "kernel.panel") == "start")
+    acts = (tmp / "niri-actions.log").read_text() if (tmp / "niri-actions.log").exists() else ""
+    check("restoring a minimized window asks niri to move and focus it", "move-window-to-workspace --window-id 11" in acts and "focus-window --id 11" in acts)
     ev(root, 'kernel.openHub("connect")')
     check("hub opens on a page and closes the panel", ev(root, "kernel.hubOpen && kernel.hubPage === 'connect' && kernel.panel === ''") is True)
     ev(root, 'kernel.setValue("no.such.key", 1)')
@@ -164,7 +180,7 @@ def step5():
         ev(faces[0], 'submit("nami", "wrong")')
         check("login: wrong password is refused", ev(groot, "root.bad && !root.busy") is True)
         ev(faces[0], 'submit("nami", "katana")')
-        check("login: right password launches the session", ev(groot, "Greetd.launchedWith !== null && Greetd.launchedWith[0] === 'start-hyprland'") is True)
+        check("login: right password launches the session", ev(groot, "Greetd.launchedWith !== null && Greetd.launchedWith[0] === 'samurai-session'") is True)
     finish()
 def finish():
     bad = [n for n, ok in checks if not ok]

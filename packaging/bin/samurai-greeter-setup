@@ -1,64 +1,117 @@
 #!/bin/sh
-# Sets up the Samurai login screen (greetd + Quickshell inside a bare Hyprland).
-# Run as root by the installer (./install.sh --greeter) or by `samurai greeter apply` through pkexec.
+# Sets up the Samurai login screen: greetd runs Quickshell inside a bare niri.
+# Run as root by the installer or by `samurai greeter apply` (through pkexec).
 #   samurai-greeter-setup black|white [USER]     set it up / refresh it
-#   samurai-greeter-setup --remove               put the previous greetd config back
-# It writes only: /etc/greetd/config.toml (the old one is kept as config.toml.before-samurai),
-# /etc/samurai/greeter.json, /etc/samurai/greeter-hyprland.lua, /usr/share/samurai/greeter-*.svg.
+#   samurai-greeter-setup --remove               put back what was there before
+# Writes only: /etc/greetd/config.toml (the old one is kept as config.toml.before-samurai),
+# /etc/samurai/*, /usr/share/samurai/greeter-*.svg, and which login manager starts at boot (the
+# previous one is remembered in /etc/samurai/previous-display-manager). Nothing running is
+# stopped or restarted: the change shows at the next boot.
 # It never touches the bootloader, the initramfs or firmware settings.
 set -eu
 [ "$(id -u)" = 0 ] || { echo "samurai-greeter-setup: run as root" >&2; exit 1; }
 GREETD=/etc/greetd/config.toml
+DM=/etc/systemd/system/display-manager.service
+greeter_user() { for u in greeter greetd _greetd; do id "$u" >/dev/null 2>&1 && { echo "$u"; return; }; done; return 1; }
+
 if [ "${1:-}" = "--remove" ]; then
     if [ -f "$GREETD.before-samurai" ]; then mv -f "$GREETD.before-samurai" "$GREETD"
     elif [ -f "$GREETD" ] && grep -q samurai "$GREETD"; then
         # there was no config before ours: leave greetd its own stock text login, never a dead entry
-        GU=greeter; id "$GU" >/dev/null 2>&1 || GU=_greetd
-        printf '[terminal]\nvt = 1\n\n[default_session]\ncommand = "agreety --cmd /bin/sh"\nuser = "%s"\n' "$GU" > "$GREETD"
+        printf '[terminal]\nvt = 1\n\n[default_session]\ncommand = "agreety --cmd /bin/sh"\nuser = "%s"\n' "$(greeter_user || echo greeter)" > "$GREETD"
     fi
-    rm -f /etc/samurai/greeter.json /etc/samurai/greeter-hyprland.lua
-    echo "login screen: previous greetd config restored"; exit 0
+    if [ -f /etc/samurai/previous-display-manager ] && command -v systemctl >/dev/null 2>&1; then
+        prev=$(cat /etc/samurai/previous-display-manager)
+        if [ "$prev" = none ]; then systemctl disable greetd.service >/dev/null 2>&1 || true
+        elif [ "$prev" != greetd.service ]; then systemctl enable --force "$prev" >/dev/null 2>&1 || true; fi
+    fi
+    rm -f /etc/samurai/greeter.json /etc/samurai/greeter-niri.kdl /etc/samurai/previous-display-manager
+    echo "login screen: what was there before is back (from the next boot)"; exit 0
 fi
+
 BASE=${1:-black}; case "$BASE" in black|white) ;; *) echo "base must be black or white" >&2; exit 2;; esac
-OWNER=${2:-${PKEXEC_UID:+$(id -nu "$PKEXEC_UID")}}; OWNER=${OWNER:-${SUDO_USER:-}}
+OWNER=${2:-}; [ -n "$OWNER" ] || { [ -z "${PKEXEC_UID:-}" ] || OWNER=$(id -nu "$PKEXEC_UID"); }; OWNER=${OWNER:-${SUDO_USER:-}}
+# exit 3 = a part is missing: nothing is changed
 command -v greetd >/dev/null 2>&1 || { echo "greetd is not installed: the login screen was left alone" >&2; exit 3; }
+command -v agreety >/dev/null 2>&1 || { echo "agreety (greetd's text login, the safety net) is not installed: the login screen was left alone" >&2; exit 3; }
 QS=$(command -v qs || command -v quickshell || true)
 [ -n "$QS" ] || { echo "quickshell is not installed: the login screen was left alone" >&2; exit 3; }
-HYPR=$(command -v start-hyprland || command -v Hyprland || true)
-[ -n "$HYPR" ] || { echo "Hyprland is not installed: the login screen was left alone" >&2; exit 3; }
-SEP=""; case "$HYPR" in *start-hyprland) SEP=" --";; esac
-GUSER=greeter; id "$GUSER" >/dev/null 2>&1 || GUSER=_greetd; id "$GUSER" >/dev/null 2>&1 || { echo "no greeter user (greeter / _greetd)" >&2; exit 3; }
+NIRI=$(command -v niri || true)
+[ -n "$NIRI" ] || { echo "niri is not installed: the login screen was left alone" >&2; exit 3; }
+GUSER=$(greeter_user) || { echo "no greeter user (greeter / greetd / _greetd): the login screen was left alone" >&2; exit 3; }
+[ -x /opt/samurai/bin/samurai-greeter-run ] && [ -f /opt/samurai/shell/greeter/shell.qml ] || { echo "Samurai is not installed in /opt/samurai" >&2; exit 3; }
 
-mkdir -p /etc/samurai /usr/share/samurai
+mkdir -p /etc/samurai /usr/share/samurai /etc/greetd
 # the login screen shows the public decoy drawing, never the owner's one-time seal: it is on
 # screen before anyone has proved who they are
-for g in black white; do
-    src=""
-    [ -n "$OWNER" ] && src=$(eval echo "~$OWNER")/.config/samurai/seal/decoy-$g.svg
-    [ -n "$src" ] && [ -f "$src" ] && install -m 0644 "$src" /usr/share/samurai/greeter-$g.svg
-done
+if [ -n "$OWNER" ]; then
+    home=$(getent passwd "$OWNER" | cut -d: -f6)
+    for g in black white; do
+        src=$home/.config/samurai/seal/decoy-$g.svg
+        [ -f "$src" ] && install -m 0644 "$src" /usr/share/samurai/greeter-$g.svg
+    done
+fi
 WALL=""; [ -f /usr/share/samurai/greeter-$BASE.svg ] && WALL=/usr/share/samurai/greeter-$BASE.svg
 USERS=$(awk -F: '$3 >= 1000 && $3 < 60000 && $7 !~ /(nologin|false)$/ { printf "%s\"%s\"", (n++ ? "," : ""), $1 }' /etc/passwd)
+SESSIONS='{ "name": "Samurai", "exec": "/opt/samurai/bin/samurai-session" }'
+command -v niri-session >/dev/null 2>&1 && SESSIONS="$SESSIONS, { \"name\": \"niri\", \"exec\": \"$(command -v niri-session)\" }"
+
+# the bare niri the login screen runs in: write it aside, let niri check it, then put it in place
+NEW=/etc/samurai/greeter-niri.kdl.new
+cat > "$NEW" <<KDL
+// samurai greeter: a bare niri that shows one thing (written by samurai-greeter-setup)
+hotkey-overlay {
+    skip-at-startup
+}
+prefer-no-csd
+environment {
+    QT_QPA_PLATFORM "wayland"
+}
+layout {
+    gaps 0
+    focus-ring {
+        off
+    }
+    border {
+        off
+    }
+}
+animations {
+    off
+}
+spawn-at-startup "sh" "-c" "$QS -p /opt/samurai/shell/greeter; niri msg action quit --skip-confirmation"
+binds {
+}
+KDL
+if ! "$NIRI" validate -c "$NEW" >/dev/null 2>&1; then
+    "$NIRI" validate -c "$NEW" >&2 || true
+    rm -f "$NEW"; echo "niri refused the login screen's config: the login screen was left alone" >&2; exit 4
+fi
+mv -f "$NEW" /etc/samurai/greeter-niri.kdl
 cat > /etc/samurai/greeter.json <<JSON
 { "base": "$BASE", "users": [$USERS], "show_users": true, "wall": "$WALL",
-  "sessions": [{ "name": "Samurai", "exec": "$HYPR" }] }
+  "sessions": [$SESSIONS] }
 JSON
-cat > /etc/samurai/greeter-hyprland.lua <<LUA
--- samurai greeter: a bare Hyprland that shows one thing
-hl.config({ misc = { disable_hyprland_logo = true, disable_splash_rendering = true, force_default_wallpaper = 0 },
-            animations = { enabled = false }, general = { border_size = 0, gaps_in = 0, gaps_out = 0 } })
-hl.on("hyprland.start", function() hl.exec_cmd("$QS -p /opt/samurai/shell/greeter; hyprctl dispatch 'hl.dsp.exit()'") end)
-LUA
-chmod 0644 /etc/samurai/greeter.json /etc/samurai/greeter-hyprland.lua
-[ -f "$GREETD" ] && ! grep -q samurai "$GREETD" && [ ! -f "$GREETD.before-samurai" ] && cp -p "$GREETD" "$GREETD.before-samurai"
-mkdir -p /etc/greetd
+chmod 0644 /etc/samurai/greeter.json /etc/samurai/greeter-niri.kdl
+
+if [ -f "$GREETD" ] && ! grep -q samurai "$GREETD" && [ ! -f "$GREETD.before-samurai" ]; then cp -p "$GREETD" "$GREETD.before-samurai"; fi
 cat > "$GREETD" <<TOML
-# written by samurai-greeter-setup (the previous file is config.toml.before-samurai)
+# written by samurai-greeter-setup (the previous file, if any, is config.toml.before-samurai)
 [terminal]
 vt = 1
 
 [default_session]
-command = "$HYPR$SEP --config /etc/samurai/greeter-hyprland.lua"
+command = "/opt/samurai/bin/samurai-greeter-run"
 user = "$GUSER"
 TOML
+
+# make greetd the login manager that starts at boot, remembering the one it replaces
+if command -v systemctl >/dev/null 2>&1; then
+    if [ ! -f /etc/samurai/previous-display-manager ]; then
+        prev=none; [ -L "$DM" ] && prev=$(basename "$(readlink "$DM")")
+        echo "$prev" > /etc/samurai/previous-display-manager
+    fi
+    systemctl enable --force greetd.service >/dev/null 2>&1 || { echo "greetd.service could not be enabled; enable it yourself: systemctl enable --force greetd" >&2; exit 5; }
+    systemctl set-default graphical.target >/dev/null 2>&1 || true
+fi
 echo "login screen: set ($BASE). It shows at the next boot; nothing running was restarted."

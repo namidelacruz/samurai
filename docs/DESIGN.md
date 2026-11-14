@@ -1,7 +1,7 @@
 # Samurai — design document
 
 This document is enough to rebuild the Samurai look anywhere, including as a website, without
-the desktop code. The desktop (Hyprland + Quickshell) is one implementation of it; `shell/` is
+the desktop code. The desktop (niri + Quickshell) is one implementation of it; `shell/` is
 the reference. Where this document and the code disagree, the code is a bug.
 
 Contents: 1 idea · 2 rules · 3 colour · 4 type · 5 grid and measures · 6 kanji · 7 components ·

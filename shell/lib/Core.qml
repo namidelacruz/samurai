@@ -1,9 +1,8 @@
-// The live Core: feeds CoreBase from the samurai command, Hyprland and the notification bus.
+// The live Core: feeds CoreBase from the samurai command, niri and the notification bus.
 // This is the only file besides shell.qml and the window wrappers that needs Quickshell.
 import QtQuick
 import Quickshell
 import Quickshell.Io
-import Quickshell.Hyprland
 import Quickshell.Services.Notifications
 
 CoreBase {
@@ -43,7 +42,7 @@ CoreBase {
     power: function(what) {
         if (what === "lock") { locked = true; return }
         if (what === "sleep") { if (v("idle.lock_before_sleep") !== false) locked = true; run(["systemctl", "suspend"]); return }
-        if (what === "logout") { run(["hyprctl", "dispatch", "hl.dsp.exit()"]); return }
+        if (what === "logout") { run(["niri", "msg", "action", "quit", "--skip-confirmation"]); return }
         if (what === "restart") { run(["systemctl", "reboot"]); return }
         if (what === "shutdown") { run(["systemctl", "poweroff"]); return }
     }
@@ -55,14 +54,14 @@ CoreBase {
     function loadBinds() { run(["samurai", "binds", "list"], function(t) { binds = parse(t, []) }) }
     Component.onCompleted: {
         run(["samurai", "schema"], function(t) { schema = parse(t, schema) })
-        loadValues(); loadStatus(); loadBinds(); loadWindows()
+        loadValues(); loadStatus(); loadBinds(); loadWindows(); stream.running = true
     }
     FileView { path: core.configDir + "/settings.json"; watchChanges: true; printErrors: false; onFileChanged: { core.loadValues(); core.loadBinds(); core.loadStatus() } }
     FileView { path: core.stateDir + "/state.json"; watchChanges: true; printErrors: false; onFileChanged: core.loadStatus() }
     FileView { path: core.configDir + "/seal/seal.json"; watchChanges: true; printErrors: false; onFileChanged: { sealBlink.restart(); core.loadStatus() } }
     Timer { interval: 5000; running: true; repeat: true; onTriggered: core.loadStatus() }
 
-    // ── night light (hyprsunset) and the background update check ─────────────────────────
+    // ── night light (gammastep) and the background update check ── ─────────────────────────
     property string nightNow: ""
     function mins(t) { var m = /^(\d{1,2}):(\d{2})$/.exec(t || ""); return m ? Number(m[1]) * 60 + Number(m[2]) : -1 }
     function nightTick() {
@@ -74,7 +73,7 @@ CoreBase {
         }
         if (want === nightNow) return
         nightNow = want
-        run(["sh", "-c", want === "off" ? "pkill -x hyprsunset; true" : "pkill -x hyprsunset; command -v hyprsunset >/dev/null && setsid -f hyprsunset -t " + Number(want) + " >/dev/null 2>&1; true"])
+        run(["sh", "-c", want === "off" ? "pkill -x gammastep; true" : "pkill -x gammastep; command -v gammastep >/dev/null && setsid -f gammastep -O " + Number(want) + " >/dev/null 2>&1; true"])
     }
     Timer { interval: 30000; running: true; repeat: true; triggeredOnStart: true; onTriggered: core.nightTick() }
     onValuesChanged: nightTick()
@@ -91,23 +90,55 @@ CoreBase {
     }
 
     // ── windows ────────────────────────────────────────────────────────────────────────────
-    activeWorkspace: Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : 1
+    // niri tells us when anything changes (its event stream); we then ask for the whole picture.
+    // Minimized windows are the ones parked on the workspace named "min" (the shelf).
+    readonly property string shelf: "min"
+    property var spaces: []            // niri's workspaces, as it reports them
     function loadWindows() {
-        run(["hyprctl", "-j", "clients"], function(t) {
-            var list = parse(t, []), out = []
-            for (var i = 0; i < list.length; i++) {
-                var c = list[i]
-                if (!c.mapped && c.mapped !== undefined) continue
-                var ws = c.workspace || {}
-                out.push({ address: c.address, cls: c["class"] || c.initialClass || "", title: c.title || "",
-                           workspace: ws.id, focused: c.focusHistoryID === 0 && String(ws.name || "").indexOf("special:min") !== 0,
-                           minimized: String(ws.name || "").indexOf("special:min") === 0 })
+        run(["niri", "msg", "-j", "workspaces"], function(t) {
+            var ws = parse(t, null)
+            if (!ws) return
+            ws.sort(function(a, b) { return a.output === b.output ? a.idx - b.idx : (a.output < b.output ? -1 : 1) })
+            var byId = {}, pos = {}, count = {}, out = "", active = 0
+            for (var i = 0; i < ws.length; i++) {
+                var w = ws[i]; byId[w.id] = w
+                if (w.name !== shelf) { count[w.output] = (count[w.output] || 0) + 1; pos[w.id] = count[w.output] }
+                if (w.is_focused) out = w.output || ""
             }
-            windows = out
+            for (var k = 0; k < ws.length; k++) if (ws[k].is_focused) active = pos[ws[k].id] || 0
+            spaces = ws; focusedOutput = out; activeWorkspace = active
+            run(["niri", "msg", "-j", "windows"], function(t2) {
+                var list = parse(t2, null), res = []
+                if (!list) return
+                for (var n = 0; n < list.length; n++) {
+                    var c = list[n], sp = byId[c.workspace_id] || {}, parked = sp.name === shelf
+                    res.push({ address: "" + c.id, cls: c.app_id || "", title: c.title || "", output: sp.output || "",
+                               workspace: parked ? 0 : (pos[c.workspace_id] || 0), focused: c.is_focused === true && !parked, minimized: parked })
+                }
+                windows = res
+            })
         })
     }
+    // the niri index of the n-th workspace (shelf not counted) on the focused output
+    workspaceIndex: function(n) {
+        var seen = 0, last = 1
+        for (var i = 0; i < spaces.length; i++) {
+            var w = spaces[i]
+            if (w.output !== focusedOutput) continue
+            last = Math.max(last, w.idx)
+            if (w.name !== shelf && ++seen === n) return w.idx
+        }
+        return last
+    }
     Timer { id: settle; interval: 60; onTriggered: core.loadWindows() }
-    Connections { target: Hyprland; function onRawEvent(ev) { settle.restart() } }
+    Process {
+        id: stream
+        command: ["niri", "msg", "-j", "event-stream"]
+        stdout: SplitParser { onRead: function(line) { settle.restart() } }
+        onExited: function(code) { again.restart() }
+    }
+    Timer { id: again; interval: 3000; onTriggered: { stream.running = true; core.loadWindows() } }
+    Component.onDestruction: stream.running = false
 
     // ── apps ───────────────────────────────────────────────────────────────────────────────
     apps: {

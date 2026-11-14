@@ -23,15 +23,15 @@ Rectangle {
                 required property int index
                 core: bar.core
                 readonly property int n: index + 1
-                readonly property bool has: core.windows.some(function(w) { return w.workspace === n && !w.minimized })
+                readonly property bool has: core.windows.some(function(w) { return w.workspace === n && !w.minimized && (w.output === core.focusedOutput || !w.output) })
                 width: core.hit; height: bar.height; pad: 0; lineRight: true
                 kanji: core.v("frame.bar.workspace_marks") === "digits" ? "" : core.kanjiDigits[n]
                 text: core.v("frame.bar.workspace_marks") === "digits" ? "" + n : ""
                 accent: core.activeWorkspace === n
                 faint: !has && core.activeWorkspace !== n
                 rotation: core.tilt(10 + index)
-                onClicked: core.run(["hyprctl", "dispatch", "hl.dsp.focus({ workspace = " + n + " })"])
-                onWheel: function(d) { core.run(["hyprctl", "dispatch", "hl.dsp.focus({ workspace = \"" + (d < 0 ? "e+1" : "e-1") + "\" })"]) }
+                onClicked: core.run(["niri", "msg", "action", "focus-workspace", "" + core.workspaceIndex(n)])
+                onWheel: function(d) { core.run(["niri", "msg", "action", d < 0 ? "focus-workspace-down" : "focus-workspace-up"]) }
             }
         }
     }

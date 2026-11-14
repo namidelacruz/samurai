@@ -1,10 +1,10 @@
-//! samurai — the backend of the Samurai desktop (Hyprland + Quickshell).
+//! samurai — the backend of the Samurai desktop (niri + Quickshell).
 //!
 //! The frame and the settings hub are QML (shell/); this program is what they call to read and
-//! change anything: the settings store, the Hyprland config, keybinds, the one-time seal,
+//! change anything: the settings store, the niri config, keybinds, the one-time seal,
 //! incognito, and the small desktop commands behind keybinds.
 mod binds;
-mod hypr;
+mod niri;
 mod misc;
 mod seal;
 mod store;
@@ -14,12 +14,12 @@ use serde_json::{json, Value};
 const USAGE: &str = "samurai — the white-frame desktop
 
   settings   get KEY | set KEY VALUE | reset KEY|PAGE|all | dump | schema
-  hyprland   apply | check | print
+  niri       apply | check | print
   keybinds   binds list | binds check \"MOD + SHIFT + T\"
   seal       seal show | seal forge [--erase-current]
   incognito  incognito on|off|toggle|status
   frame      shell start|quick|widgets|settings|keys|base|incognito|lock|power|restart
-  windows    win minimize | win restore [ADDRESS] | win prune
+  windows    win minimize [ID] | win restore [ID] | win tidy
   apps       open terminal|files|browser | term CMD…
   looks      look list | save NAME | apply NAME | export NAME | delete NAME
   store      store refresh | list | install ID | remove ID      plugins
@@ -42,24 +42,29 @@ fn run(a: &[&str]) -> Result<String, String> {
     match a {
         ["get", key] => store::item(key).map(|_| store::get(key).to_string()).ok_or(format!("{key}: no such setting")),
         ["set", key, raw] => {
+            let before = store::get(key);
             store::set(key, parse_value(key, raw))?;
-            // a setting Hyprland reads is applied at once; the frame watches settings.json itself
+            // a setting niri reads is applied at once; the frame watches settings.json itself.
+            // If niri refuses the result, the setting goes back: a saved value is always a working one.
             let it = store::item(key).unwrap();
-            if it["hl"].is_string() || it["use"] == "hypr" || key.starts_with("look.base") || key.starts_with("look.auto") {
-                hypr::apply()?;
+            if it["use"] == "niri" || key.starts_with("look.base") || key.starts_with("look.auto") {
+                if let Err(e) = niri::apply() {
+                    let _ = store::set(key, before);
+                    return Err(e);
+                }
             }
             Ok("saved".into())
         }
         ["reset", what] => {
             let n = store::reset(what)?;
-            hypr::apply()?;
+            niri::apply()?;
             Ok(format!("{n} setting(s) back to default"))
         }
         ["dump"] => Ok(Value::Object(store::all()).to_string()),
         ["schema"] => Ok(store::SCHEMA.to_string()),
-        ["apply"] => hypr::apply().map(|v| v.join("\n")),
-        ["check"] => hypr::check(),
-        ["print"] => Ok(hypr::generate()),
+        ["apply"] => niri::apply().map(|v| v.join("\n")),
+        ["check"] => niri::check(),
+        ["print"] => Ok(niri::generate()),
         ["binds", "list"] => Ok(binds::list_json().to_string()),
         ["binds", "check", keys] => Ok(binds::check(keys).to_string()),
         ["seal", "show"] => Ok(seal::show().to_string()),
@@ -82,12 +87,12 @@ fn run(a: &[&str]) -> Result<String, String> {
         ["status"] => Ok(misc::status().to_string()),
         ["gpu", "check"] => Ok(misc::gpu_check().to_string()),
         ["session-start"] => {
-            hypr::apply()?;
+            niri::apply()?;
             misc::session_start().map(|_| String::new())
         }
         ["greeter", "apply"] => {
             if !std::path::Path::new("/opt/samurai/bin/samurai-greeter-setup").exists() {
-                return Err("the login screen is set up by the installer: ./install.sh --greeter".into());
+                return Err("the login screen is set up by the installer: ./install.sh".into());
             }
             let base = store::get_str("greeter.base");
             misc::out(&["pkexec", "/opt/samurai/bin/samurai-greeter-setup", &base]).0.then(|| "login screen updated".to_string()).ok_or("the login screen was not changed".into())

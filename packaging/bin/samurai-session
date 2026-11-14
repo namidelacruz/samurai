@@ -1,0 +1,31 @@
+#!/bin/sh
+# Starts the Samurai desktop: niri, reading Samurai's own config instead of ~/.config/niri.
+# Your plain niri session and its config are not touched.
+CONF=${XDG_CONFIG_HOME:-$HOME/.config}/samurai/niri/config.kdl
+SAMURAI=/opt/samurai/bin/samurai
+[ -f "$CONF" ] || "$SAMURAI" apply >/dev/null 2>&1
+SAFE=$(dirname "$CONF")/safe.kdl
+LOGDIR=${XDG_STATE_HOME:-$HOME/.local/state}/samurai
+if [ -f "$CONF" ] && niri validate -c "$CONF" >/dev/null 2>&1; then
+    export NIRI_CONFIG="$CONF"
+elif printf 'include "generated.kdl"\n' > "$SAFE" 2>/dev/null && niri validate -c "$SAFE" >/dev/null 2>&1; then
+    # your own user.kdl is what niri refuses: start Samurai without it and say so
+    mkdir -p "$LOGDIR"
+    { date; echo "samurai-session: user.kdl was refused by niri; started without it"; niri validate -c "$CONF" 2>&1; } >> "$LOGDIR/session.log"
+    export NIRI_CONFIG="$SAFE"
+else
+    # never leave you without a desktop: fall back to niri's own config and say why
+    mkdir -p "${XDG_STATE_HOME:-$HOME/.local/state}/samurai"
+    { date; echo "samurai-session: $CONF was refused by niri; started with niri's own config instead"; niri validate -c "$CONF" 2>&1; } \
+        >> "${XDG_STATE_HOME:-$HOME/.local/state}/samurai/session.log"
+    unset NIRI_CONFIG
+fi
+export XDG_CURRENT_DESKTOP=niri XDG_SESSION_DESKTOP=samurai
+if command -v niri-session >/dev/null 2>&1 && command -v systemctl >/dev/null 2>&1; then
+    niri-session; rc=$?
+    # niri-session imports the whole environment into the user manager; take ours back out so a
+    # later plain niri session reads its own config again
+    systemctl --user unset-environment NIRI_CONFIG XDG_SESSION_DESKTOP 2>/dev/null
+    exit $rc
+fi
+exec niri --session

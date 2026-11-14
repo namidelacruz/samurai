@@ -62,7 +62,7 @@ Rectangle {
                     else if (focused && ws.length === 1) core.run(["samurai", "win", "minimize"])
                     else {
                         var i = ws.findIndex(function(w) { return w.focused })
-                        core.run(["hyprctl", "dispatch", "hl.dsp.focus({ window = \"address:" + ws[(i + 1) % ws.length].address + "\" })"])
+                        core.run(["niri", "msg", "action", "focus-window", "--id", ws[(i + 1) % ws.length].address])
                     }
                 }
                 onRightClicked: core.launch((modelData.app || "").replace(/\.desktop$/, ""))

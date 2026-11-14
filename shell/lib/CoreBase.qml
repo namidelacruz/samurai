@@ -12,7 +12,9 @@ Item {
     property var values: ({})          // every setting, defaults included
     property var status: ({})          // samurai status
     property var windows: []           // [{address, cls, title, workspace, focused, minimized}]
-    property int activeWorkspace: 1
+    property int activeWorkspace: 1    // counted on the focused screen, the shelf left out
+    property string focusedOutput: ""
+    property var workspaceIndex: function(n) { return n }
     property var notices: []           // [{id, app, summary, body}]
     property var apps: []              // [{id, name, exec, kanji}]
     property date now: new Date()

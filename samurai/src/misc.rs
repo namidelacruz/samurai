@@ -71,12 +71,11 @@ pub fn status() -> Value {
         "brightness": bri.split(',').nth(3).and_then(|p| p.trim_end_matches('%').parse::<i64>().ok()),
         "user": std::env::var("USER").unwrap_or_default(),
         "host": std::fs::read_to_string("/etc/hostname").unwrap_or_default().trim(),
-        "base": crate::hypr::base_now(),
-        "accent": crate::hypr::accent(),
+        "base": crate::niri::base_now(),
+        "accent": crate::niri::accent(),
         "incognito": st.get("incognito").and_then(|v| v.as_bool()).unwrap_or(false),
         "update": st.get("update").cloned().unwrap_or(json!({ "available": false })),
         "seal": crate::seal::show(),
-        "minimized": st.get("minimized").cloned().unwrap_or(json!([])),
         "recording": st.get("recording").and_then(|v| v.as_u64()).is_some_and(|pid| std::path::Path::new(&format!("/proc/{pid}")).exists()),
     })
 }
@@ -98,52 +97,81 @@ pub fn incognito(arg: &str) -> Result<bool, String> {
     Ok(want)
 }
 
-// ── minimize: Hyprland has none, so the window is parked on a hidden workspace ──────────────
-fn dispatch(lua: &str) -> bool {
-    out(&["hyprctl", "dispatch", lua]).0
+// ── minimize: niri has none, so the window is parked on a named workspace ("the shelf") ──────
+fn niri_json(what: &str) -> Value {
+    serde_json::from_str(&out(&["niri", "msg", "-j", what]).1).unwrap_or(Value::Null)
+}
+fn action(args: &[&str]) -> bool {
+    let mut c = vec!["niri", "msg", "action"];
+    c.extend_from_slice(args);
+    out(&c).0
+}
+fn shelf_of(workspaces: &Value) -> Option<Value> {
+    workspaces.as_array()?.iter().find(|w| w["name"] == crate::niri::SHELF).cloned()
 }
 
-pub fn win(arg: &str, addr: Option<&str>) -> Result<String, String> {
-    let mut min: Vec<Value> = store::state().get("minimized").and_then(|v| v.as_array().cloned()).unwrap_or_default();
-    let valid = |a: &str| a.starts_with("0x") && a.len() <= 20 && a[2..].chars().all(|c| c.is_ascii_hexdigit());
+/// Keep the shelf below every workspace that has windows, so Mod+1…9 keep meaning what they say.
+pub fn tidy() -> Result<String, String> {
+    let ws = niri_json("workspaces");
+    let Some(shelf) = shelf_of(&ws) else { return Ok("no shelf".into()) };
+    let same: Vec<&Value> = ws.as_array().map(|a| a.iter().filter(|w| w["output"] == shelf["output"]).collect()).unwrap_or_default();
+    // the last workspace on an output is niri's always-empty one; the shelf belongs just above it
+    let last_used = same.iter().filter(|w| w["name"] != crate::niri::SHELF && !w["active_window_id"].is_null()).filter_map(|w| w["idx"].as_u64()).max().unwrap_or(0);
+    let at = shelf["idx"].as_u64().unwrap_or(0);
+    if at > last_used {
+        return Ok("in place".into());
+    }
+    action(&["move-workspace-to-index", "--reference", crate::niri::SHELF, &last_used.to_string()]).then(|| "moved".to_string()).ok_or("niri did not move the shelf".into())
+}
+
+pub fn win(arg: &str, id: Option<&str>) -> Result<String, String> {
+    let ws = niri_json("workspaces");
+    let shelf = shelf_of(&ws);
+    let shelf_id = shelf.as_ref().map(|s| s["id"].clone()).unwrap_or(Value::Null);
+    let valid = |a: &str| !a.is_empty() && a.len() <= 20 && a.chars().all(|c| c.is_ascii_digit());
     match arg {
         "minimize" => {
-            let a: Value = serde_json::from_str(&out(&["hyprctl", "activewindow", "-j"]).1).map_err(|_| "no focused window")?;
-            let address = a["address"].as_str().filter(|x| valid(x)).ok_or("no focused window")?.to_string();
-            if !dispatch(&format!("hl.dsp.window.move({{ workspace = \"special:min\", follow = false, window = \"address:{address}\" }})")) {
-                return Err("Hyprland refused to move the window".into());
+            if shelf.is_none() {
+                return Err("the shelf workspace is missing (samurai apply writes it)".into());
             }
-            min.retain(|m| m["address"] != address.as_str());
-            min.push(json!({ "address": address, "class": a["class"], "title": a["title"] }));
-            store::set_state("minimized", Value::Array(min))?;
-            Ok(format!("minimized {address}"))
+            let wid = match id {
+                Some(a) if valid(a) => a.to_string(),
+                Some(a) => return Err(format!("{a} is not a window id")),
+                None => niri_json("focused-window")["id"].as_u64().ok_or("no focused window")?.to_string(),
+            };
+            if !action(&["move-window-to-workspace", "--window-id", &wid, "--focus", "false", crate::niri::SHELF]) {
+                return Err("niri refused to move the window".into());
+            }
+            let _ = tidy();
+            Ok(format!("minimized {wid}"))
         }
         "restore" => {
-            let address = match addr {
+            let windows = niri_json("windows");
+            let mut parked: Vec<&Value> = windows.as_array().map(|a| a.iter().filter(|w| !shelf_id.is_null() && w["workspace_id"] == shelf_id).collect()).unwrap_or_default();
+            parked.sort_by_key(|w| (w["focus_timestamp"]["secs"].as_u64().unwrap_or(0), w["focus_timestamp"]["nanos"].as_u64().unwrap_or(0)));
+            let wid = match id {
                 Some(a) if valid(a) => a.to_string(),
-                Some(a) => return Err(format!("{a} is not a window address")),
-                None => min.last().and_then(|m| m["address"].as_str()).ok_or("nothing is minimized")?.to_string(),
+                Some(a) => return Err(format!("{a} is not a window id")),
+                None => parked.last().and_then(|w| w["id"].as_u64()).ok_or("nothing is minimized")?.to_string(),
             };
-            let ws: Value = serde_json::from_str(&out(&["hyprctl", "activeworkspace", "-j"]).1).unwrap_or(Value::Null);
-            let id = ws["id"].as_i64().filter(|n| *n > 0).unwrap_or(1);
-            dispatch(&format!("hl.dsp.window.move({{ workspace = {id}, follow = false, window = \"address:{address}\" }})"));
-            dispatch(&format!("hl.dsp.focus({{ window = \"address:{address}\" }})"));
-            min.retain(|m| m["address"] != address.as_str());
-            store::set_state("minimized", Value::Array(min))?;
-            Ok(format!("restored {address}"))
-        }
-        // drop entries whose window has closed
-        "prune" => {
-            let clients: Value = serde_json::from_str(&out(&["hyprctl", "clients", "-j"]).1).unwrap_or(json!([]));
-            let live: Vec<&str> = clients.as_array().map(|a| a.iter().filter_map(|c| c["address"].as_str()).collect()).unwrap_or_default();
-            let n = min.len();
-            min.retain(|m| m["address"].as_str().is_some_and(|a| live.contains(&a)));
-            if min.len() != n {
-                store::set_state("minimized", Value::Array(min))?;
+            // back to the workspace the user is looking at
+            let here = ws.as_array().and_then(|a| a.iter().find(|w| w["is_focused"] == true)).cloned().unwrap_or(Value::Null);
+            let same_output = shelf.as_ref().is_some_and(|s| s["output"] == here["output"]);
+            let moved = if same_output || here.is_null() {
+                let idx = here["idx"].as_u64().unwrap_or(1).to_string();
+                action(&["move-window-to-workspace", "--window-id", &wid, &idx])
+            } else {
+                action(&["move-window-to-monitor", "--id", &wid, here["output"].as_str().unwrap_or("")])
+            };
+            if !moved {
+                return Err("niri refused to move the window".into());
             }
-            Ok("pruned".into())
+            action(&["focus-window", "--id", &wid]);
+            let _ = tidy();
+            Ok(format!("restored {wid}"))
         }
-        a => Err(format!("win {a}: minimize, restore [ADDRESS] or prune")),
+        "tidy" | "prune" => tidy(),
+        a => Err(format!("win {a}: minimize [ID], restore [ID] or tidy")),
     }
 }
 
@@ -193,13 +221,13 @@ pub fn shell(verb: &str, arg: Option<&str>) -> Result<(), String> {
     }
 }
 
-/// what Hyprland runs at login: the frame, the seal on first login, the generated config in step
+/// what niri runs at login: the frame, the seal on first login, the generated config in step
 pub fn session_start() -> Result<(), String> {
     if !crate::seal::exists() {
         let _ = crate::seal::forge(false);
     }
     let _ = store::set_state("incognito", json!(false));
-    let _ = win("prune", None);
+    let _ = tidy();
     let qs = if have("qs") { "qs" } else { "quickshell" };
     spawn(&[qs, "-c", "samurai"]).then_some(()).ok_or("quickshell is not installed".into())
 }
@@ -238,7 +266,7 @@ pub fn look(args: &[&str]) -> Result<String, String> {
                 }
             }
             store::save(&u)?;
-            crate::hypr::apply()?;
+            crate::niri::apply()?;
             Ok(format!("applied look \"{name}\" ({n} settings)"))
         }
         ["export", name] => std::fs::read_to_string(look_file(name)?).map_err(|_| format!("no look named \"{name}\"")),

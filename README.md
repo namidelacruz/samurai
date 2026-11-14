@@ -1,15 +1,16 @@
 # Samurai 侍
 
-A desktop for Hyprland and Quickshell. Minimal brutalism, Japanese vocabulary, black or white
+A desktop for niri and Quickshell. Minimal brutalism, Japanese vocabulary, black or white
 with one Pantone red. **The frame is the desktop:** one line runs round the screen, and the bar,
 the rail and every panel grow out of it.
 
 - **Two grounds.** Black or white, switched live (`Mod+Shift+B`). Nothing but ink and ground trade places.
 - **一期一会 — a one-time wallpaper.** Drawn once per machine from 32 random bytes, for both
   grounds; the bytes are destroyed after drawing. It cannot be drawn again, by you or by Samurai.
-- **Settings hub** (`Mod+,`): 24 pages, 197 settings, searchable, saved as you go, applied live,
+- **Settings hub** (`Mod+,`): 24 pages, 181 settings, searchable, saved as you go, applied live,
   including your own keybinds with clash detection.
-- **Minimized windows go to the rail**, so the bar stays free.
+- **Minimized windows go to the rail**, so the bar stays free. (niri has no minimize: the window
+  is parked on a workspace named `min`, "the shelf", which the bar leaves out.)
 - **UC-Secure / AirUC-Secure and eduroam** setup and repair are fixed in Settings › Connect.
 - **Incognito** (`Mod+Shift+I`): hides names, titles, network, notices and the wallpaper, and
   tilts the grid so the mode is unmistakable.
@@ -19,25 +20,42 @@ the rail and every panel grow out of it.
 
 ## Install
 
-Needs Hyprland 0.57 or newer (Lua config), Quickshell, greetd (only for the login screen), a
-Rust toolchain and git. Fonts: IBM Plex Mono and Noto Sans CJK JP.
+Needs niri 25.11 or newer (written against 26.04; per-app blur needs 26.04), Quickshell, greetd
+for the login screen, a Rust toolchain and git. Fonts: IBM Plex Mono and Noto Sans CJK JP.
 
 ```sh
-./install.sh             # one status bar; detail in ~/.local/state/samurai/install.log
-./install.sh --greeter   # also set up the Samurai login screen
-./install.sh --uninstall # remove it; your settings and ~/.config/hypr stay
+./install.sh              # one status bar; detail in ~/.local/state/samurai/install.log
+./install.sh --no-greeter # leave your login screen as it is
+./install.sh --uninstall  # remove it; settings and seal stay, the old login screen comes back
 ```
 
-Log out and pick **Samurai**. If you already have your own `~/.config/hypr/hyprland.lua` it is
-left alone and the installer tells you the one line to add.
+Log out and pick **Samurai**.
 
-The installer writes to `/opt/samurai`, `/usr/local/bin`, two `.desktop` files, and your own
-config folders. With `--greeter` it also writes `/etc/greetd/config.toml` (the old one is kept
-as `config.toml.before-samurai`) and `/etc/samurai/`. It never touches the bootloader, the
-initramfs or firmware settings.
+**Your own niri setup is not touched.** Samurai keeps its config in `~/.config/samurai/niri/`
+and its session starts niri pointed at that folder; the plain niri session still reads
+`~/.config/niri/config.kdl`. Your own KDL for Samurai goes in `~/.config/samurai/niri/user.kdl`.
 
-**If the login screen ever fails to appear:** switch to another console (`Ctrl+Alt+F2`), log in,
-and run `sudo /opt/samurai/bin/samurai-greeter-setup --remove`.
+A config niri refuses never replaces a working one: every change is checked with
+`niri validate` first, and a setting whose result is refused goes back to its old value. If
+your `user.kdl` is what niri refuses, the session starts Samurai without it; if even that
+fails, it starts niri with niri's own config. Why is written to
+`~/.local/state/samurai/session.log`.
+
+### The login screen
+
+The installer sets it up unless you pass `--no-greeter`. It installs greetd with pacman or dnf
+if it is missing, writes `/etc/greetd/config.toml` (the old one is kept as
+`config.toml.before-samurai`) and `/etc/samurai/`, and makes greetd the login manager **from the
+next boot** (the one it replaces is remembered in `/etc/samurai/previous-display-manager`).
+Nothing running is stopped. If a part is missing (greetd, agreety, Quickshell, niri), nothing is
+changed and the installer says so in its last lines.
+
+The login screen is Quickshell inside a bare niri. If that cannot start, or dies within eight
+seconds, greetd's own text login (`agreety`) takes over on the same screen, so a broken
+graphical greeter cannot lock you out. To go back by hand:
+`sudo /opt/samurai/bin/samurai-greeter-setup --remove` (from another console: `Ctrl+Alt+F2`).
+
+The installer never touches the bootloader, the initramfs or firmware settings.
 
 ## Keys
 
@@ -49,20 +67,26 @@ and run `sudo /opt/samurai/bin/samurai-greeter-setup --remove`.
 | `Mod+A` | Quick settings | `Mod+Q` | Close window |
 | `Mod+,` | Settings | `Mod+M` / `Mod+Shift+M` | Minimize to the rail / bring back |
 | `Mod+Shift+B` | Black / white | `Mod+1…0` | Workspace |
+| `Mod+O` | Overview | `Mod+R` / `Mod+-` / `Mod+=` | Window width |
 | `Mod+Shift+I` | Incognito | `Mod+Alt+L` | Lock |
 
 ## What is and is not checked
 
-Run `tests/run.sh`. It covers: 47 Rust tests; the generated Hyprland Lua (syntax with `luac`,
-then a full run against a stand-in `hl`); the seal being refused a second time; a render of 35
-scenes of the interface (both grounds, Incognito, lock, login, every settings page) that fails
-on any QML warning; and a wiring check that loads the real `shell.qml` and greeter against
-stand-in Quickshell modules and drives settings, panels, lock and login.
+Run `tests/run.sh`. It covers: 47 Rust tests; the generated niri config, and every niri-backed
+setting at its extremes (88 values, plus hostile text in every free-text field), judged by
+niri's own config parser; the seal being refused a second time; a render of 35 scenes of the
+interface (both grounds, Incognito, lock, login, every settings page) that fails on any QML
+warning; and a wiring check that loads the real `shell.qml` and greeter against stand-in
+Quickshell modules and a stand-in `niri` command, and drives settings, windows, minimize,
+panels, lock and login. The installer was run end to end as an ordinary user on a test system
+with an existing login manager, then reinstalled and uninstalled.
 
-**None of that is Hyprland, Quickshell or hardware.** Samurai has not been run inside a real
-Hyprland session, against the real Quickshell, on a real GPU, with real greetd/PAM, or on a
-real campus network. Expect to fix things on first boot; the session is built so that a broken
-shell still leaves you a working Hyprland with a terminal on `Mod+Return`.
+The config parser used here is niri's `niri-config` crate at 25.11, 26.04 and main, built as a
+small program; it is the same code `niri validate` runs, but it is not a running niri.
+
+**None of that is niri itself, Quickshell or hardware.** Samurai has not been run inside a real
+niri session, against the real Quickshell, on a real GPU, with real greetd/PAM, or on a real
+campus network. Expect to fix things on first boot.
 
 ## Not built yet
 
@@ -76,11 +100,11 @@ command line through a plain list, not a gallery.
 ## Layout
 
 ```
-samurai/        the `samurai` command: settings, Hyprland config generator, keybinds, seal, updates
+samurai/        the `samurai` command: settings, niri config generator, keybinds, seal, updates
 services/core/  `shadow`: the Wi-Fi campus setup, repair and diagnosis, unchanged from Shadow
 shell/          the Quickshell interface (lib, frame, hub, lock, greeter) and the settings schema
-packaging/      session files and the login-screen setup script
+packaging/      the session starter, the login-screen runner and setup script, .desktop files
 tools/schema.py the source of shell/settings.schema.json
 docs/DESIGN.md  the design, reproducible
-tests/          run.sh, the Lua stand-in, the QML render and wiring checks
+tests/          run.sh, the settings sweep, a stand-in niri command, the QML render and wiring checks
 ```

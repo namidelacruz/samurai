@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Offscreen render check for the pure-QtQuick parts of the shell.
 
-Loads each *Content.qml with CoreBase and canned data (no Quickshell, no Hyprland), saves a
+Loads each *Content.qml with CoreBase and canned data (no Quickshell, no niri), saves a
 PNG per scene, and fails on any QML warning. This proves the files parse, bind and lay out;
-it does not prove anything about Quickshell windows or Hyprland.
+it does not prove anything about Quickshell windows or niri.
 
     QT_QPA_PLATFORM=offscreen python3 tests/qml/render.py OUT_DIR
 """
@@ -29,7 +29,7 @@ def status(base, incognito):
 
 windows = [
     {"address": "0x1", "cls": "kitty", "title": "nami@katana: ~/samurai", "workspace": 1, "focused": True, "minimized": False},
-    {"address": "0x2", "cls": "firefox", "title": "Hyprland Wiki", "workspace": 1, "focused": False, "minimized": False},
+    {"address": "0x2", "cls": "firefox", "title": "niri wiki", "workspace": 1, "focused": False, "minimized": False},
     {"address": "0x3", "cls": "org.gnome.Nautilus", "title": "Home", "workspace": 2, "focused": False, "minimized": True},
     {"address": "0x4", "cls": "thunderbird", "title": "Inbox", "workspace": 3, "focused": False, "minimized": True},
 ]
@@ -63,7 +63,7 @@ DESK = """
         x: core.panel === "power" ? core.railW : parent.width - width - core.inset; y: core.panel === "power" ? parent.height - height - core.inset : core.barH }
 """
 HUB = 'HubContent { anchors.fill: parent; core: core }'
-LOCK = 'LockContent { anchors.fill: parent; core: core; mode: "%s"; user: "nami"; users: ["nami", "guest"]; sessions: [{ name: "Samurai", exec: "start-hyprland" }]; wall: core.sealDir ? "file://" + core.sealDir + "/wall-" + core.base + ".svg" : ""; message: "%s"; failed: %s }'
+LOCK = 'LockContent { anchors.fill: parent; core: core; mode: "%s"; user: "nami"; users: ["nami", "guest"]; sessions: [{ name: "Samurai", exec: "samurai-session" }]; wall: core.sealDir ? "file://" + core.sealDir + "/wall-" + core.base + ".svg" : ""; message: "%s"; failed: %s }'
 
 scenes = [("desk-black", DESK, "black", False, "", "displays", 1600, 900), ("desk-white", DESK, "white", False, "", "displays", 1600, 900),
           ("start-black", DESK, "black", False, "start", "displays", 1600, 900), ("quick-white", DESK, "white", False, "quick", "displays", 1600, 900),

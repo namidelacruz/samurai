@@ -49,7 +49,7 @@
         "external",
         "primary"
        ],
-       "use": "hypr",
+       "use": "niri",
        "soon": true
       },
       {
@@ -57,7 +57,7 @@
        "label": "Adaptive sync",
        "type": "toggle",
        "default": false,
-       "use": "hypr"
+       "use": "niri"
       },
       {
        "key": "displays.night.enabled",
@@ -101,11 +101,10 @@
         "position",
         "scale",
         "transform",
-        "mirror",
         "disabled"
        ],
-       "example": "eDP-1 · preferred · auto · 1.5 · 0 · · no",
-       "use": "hypr"
+       "example": "eDP-1 · 2560x1600@120 · 0,0 · 1.5 · normal · no",
+       "use": "niri"
       }
      ]
     }
@@ -128,21 +127,21 @@
        "label": "Layout",
        "type": "text",
        "default": "us",
-       "hl": "input:kb_layout"
+       "use": "niri"
       },
       {
        "key": "input.kb_variant",
        "label": "Variant",
        "type": "text",
        "default": "",
-       "hl": "input:kb_variant"
+       "use": "niri"
       },
       {
        "key": "input.kb_options",
        "label": "Options (e.g. caps:escape)",
        "type": "text",
        "default": "",
-       "hl": "input:kb_options"
+       "use": "niri"
       },
       {
        "key": "input.repeat_rate",
@@ -152,7 +151,7 @@
        "min": 1,
        "max": 100,
        "step": 1,
-       "hl": "input:repeat_rate"
+       "use": "niri"
       },
       {
        "key": "input.repeat_delay",
@@ -162,14 +161,14 @@
        "min": 100,
        "max": 2000,
        "step": 50,
-       "hl": "input:repeat_delay"
+       "use": "niri"
       },
       {
        "key": "input.numlock",
        "label": "Num Lock on at login",
        "type": "toggle",
        "default": false,
-       "hl": "input:numlock_by_default"
+       "use": "niri"
       }
      ]
     },
@@ -185,7 +184,7 @@
        "min": -1.0,
        "max": 1.0,
        "step": 0.05,
-       "hl": "input:sensitivity"
+       "use": "niri"
       },
       {
        "key": "input.accel_profile",
@@ -196,21 +195,21 @@
         "adaptive",
         "flat"
        ],
-       "hl": "input:accel_profile"
+       "use": "niri"
       },
       {
        "key": "input.left_handed",
        "label": "Left-handed buttons",
        "type": "toggle",
        "default": false,
-       "hl": "input:left_handed"
+       "use": "niri"
       },
       {
        "key": "input.natural_scroll",
        "label": "Natural scroll (mouse)",
        "type": "toggle",
        "default": false,
-       "hl": "input:natural_scroll"
+       "use": "niri"
       },
       {
        "key": "input.scroll_factor",
@@ -220,28 +219,21 @@
        "min": 0.1,
        "max": 5.0,
        "step": 0.1,
-       "hl": "input:scroll_factor"
+       "use": "niri"
       },
       {
        "key": "input.follow_mouse",
        "label": "Focus follows the pointer",
-       "type": "enum",
-       "default": "1",
-       "options": [
-        "0",
-        "1",
-        "2",
-        "3"
-       ],
-       "hl": "input:follow_mouse",
-       "as_int": true
+       "type": "toggle",
+       "default": false,
+       "use": "niri"
       },
       {
        "key": "input.middle_paste",
        "label": "Middle-click paste",
        "type": "toggle",
        "default": true,
-       "hl": "misc:middle_click_paste"
+       "use": "niri"
       }
      ]
     },
@@ -254,50 +246,49 @@
        "label": "Tap to click",
        "type": "toggle",
        "default": true,
-       "hl": "input:touchpad:tap-to-click"
+       "use": "niri"
       },
       {
        "key": "input.touchpad.tap_drag",
        "label": "Tap and drag",
        "type": "toggle",
        "default": true,
-       "hl": "input:touchpad:tap-and-drag"
+       "use": "niri"
       },
       {
        "key": "input.touchpad.drag_lock",
        "label": "Drag lock",
        "type": "toggle",
        "default": false,
-       "hl": "input:touchpad:drag_lock",
-       "as_int": true
+       "use": "niri"
       },
       {
        "key": "input.touchpad.natural",
        "label": "Natural scroll",
        "type": "toggle",
        "default": true,
-       "hl": "input:touchpad:natural_scroll"
+       "use": "niri"
       },
       {
        "key": "input.touchpad.dwt",
        "label": "Off while typing",
        "type": "toggle",
        "default": true,
-       "hl": "input:touchpad:disable_while_typing"
+       "use": "niri"
       },
       {
        "key": "input.touchpad.clickfinger",
        "label": "Click by finger count",
        "type": "toggle",
        "default": false,
-       "hl": "input:touchpad:clickfinger_behavior"
+       "use": "niri"
       },
       {
        "key": "input.touchpad.middle_emu",
        "label": "Middle-click emulation",
        "type": "toggle",
        "default": false,
-       "hl": "input:touchpad:middle_button_emulation"
+       "use": "niri"
       },
       {
        "key": "input.touchpad.scroll_factor",
@@ -307,42 +298,7 @@
        "min": 0.1,
        "max": 5.0,
        "step": 0.1,
-       "hl": "input:touchpad:scroll_factor"
-      }
-     ]
-    },
-    {
-     "jp": "払",
-     "en": "GESTURES",
-     "items": [
-      {
-       "key": "input.swipe.enabled",
-       "label": "Swipe between workspaces",
-       "type": "toggle",
-       "default": true,
-       "use": "hypr"
-      },
-      {
-       "key": "input.swipe.fingers",
-       "label": "Fingers",
-       "type": "enum",
-       "default": "3",
-       "options": [
-        "3",
-        "4"
-       ],
-       "use": "hypr"
-      },
-      {
-       "key": "input.swipe.direction",
-       "label": "Direction",
-       "type": "enum",
-       "default": "horizontal",
-       "options": [
-        "horizontal",
-        "vertical"
-       ],
-       "use": "hypr"
+       "use": "niri"
       }
      ]
     },
@@ -355,7 +311,7 @@
        "label": "Theme",
        "type": "text",
        "default": "",
-       "use": "hypr"
+       "use": "niri"
       },
       {
        "key": "input.cursor.size",
@@ -365,7 +321,7 @@
        "min": 12,
        "max": 96,
        "step": 2,
-       "use": "hypr"
+       "use": "niri"
       },
       {
        "key": "input.cursor.timeout",
@@ -375,14 +331,14 @@
        "min": 0,
        "max": 600,
        "step": 1,
-       "hl": "cursor:inactive_timeout"
+       "use": "niri"
       },
       {
        "key": "input.cursor.hide_typing",
        "label": "Hide while typing",
        "type": "toggle",
        "default": true,
-       "hl": "cursor:hide_on_key_press"
+       "use": "niri"
       }
      ]
     }
@@ -409,14 +365,7 @@
         "ALT",
         "CTRL"
        ],
-       "use": "hypr"
-      },
-      {
-       "key": "binds.resolve_by_sym",
-       "label": "Match by symbol, not key position",
-       "type": "toggle",
-       "default": false,
-       "hl": "input:resolve_binds_by_sym"
+       "use": "niri"
       },
       {
        "key": "binds.custom",
@@ -431,7 +380,7 @@
         "flags"
        ],
        "example": "SUPER + SHIFT + T · spawn · kitty · Scratch terminal · ",
-       "use": "hypr"
+       "use": "niri"
       },
       {
        "key": "binds.disabled",
@@ -442,7 +391,7 @@
         "id"
        ],
        "example": "win.close",
-       "use": "hypr"
+       "use": "niri"
       },
       {
        "key": "binds.moved",
@@ -454,7 +403,7 @@
         "keys"
        ],
        "example": "frame.widgets · SUPER + SHIFT + W",
-       "use": "hypr"
+       "use": "niri"
       },
       {
        "key": "binds.mouse",
@@ -466,8 +415,8 @@
         "action",
         "arg"
        ],
-       "example": "mouse:276 · workspace · e-1",
-       "use": "hypr"
+       "example": "MouseBack · workspace · e-1",
+       "use": "niri"
       }
      ]
     }
@@ -549,22 +498,8 @@
         "integrated",
         "discrete"
        ],
-       "use": "hypr",
+       "use": "niri",
        "soon": true
-      },
-      {
-       "key": "gpu.tearing",
-       "label": "Allow tearing (games)",
-       "type": "toggle",
-       "default": false,
-       "hl": "general:allow_tearing"
-      },
-      {
-       "key": "gpu.direct_scanout",
-       "label": "Direct scanout for fullscreen",
-       "type": "toggle",
-       "default": false,
-       "use": "hypr"
       }
      ]
     },
@@ -974,7 +909,7 @@
        "min": 0,
        "max": 64,
        "step": 1,
-       "hl": "general:gaps_in"
+       "use": "niri"
       },
       {
        "key": "look.gaps_out",
@@ -984,7 +919,7 @@
        "min": 0,
        "max": 96,
        "step": 1,
-       "hl": "general:gaps_out"
+       "use": "niri"
       },
       {
        "key": "look.border",
@@ -994,7 +929,7 @@
        "min": 0,
        "max": 8,
        "step": 1,
-       "hl": "general:border_size"
+       "use": "niri"
       },
       {
        "key": "look.rounding",
@@ -1004,7 +939,7 @@
        "min": 0,
        "max": 32,
        "step": 1,
-       "hl": "decoration:rounding"
+       "use": "niri"
       },
       {
        "key": "look.active_opacity",
@@ -1014,7 +949,7 @@
        "min": 0.3,
        "max": 1.0,
        "step": 0.05,
-       "hl": "decoration:active_opacity"
+       "use": "niri"
       },
       {
        "key": "look.inactive_opacity",
@@ -1024,31 +959,14 @@
        "min": 0.3,
        "max": 1.0,
        "step": 0.05,
-       "hl": "decoration:inactive_opacity"
-      },
-      {
-       "key": "look.dim_inactive",
-       "label": "Dim other windows",
-       "type": "toggle",
-       "default": false,
-       "hl": "decoration:dim_inactive"
-      },
-      {
-       "key": "look.dim_strength",
-       "label": "Dim strength",
-       "type": "float",
-       "default": 0.3,
-       "min": 0.0,
-       "max": 1.0,
-       "step": 0.05,
-       "hl": "decoration:dim_strength"
+       "use": "niri"
       },
       {
        "key": "look.blur",
        "label": "Blur behind see-through windows",
        "type": "toggle",
        "default": false,
-       "hl": "decoration:blur:enabled"
+       "use": "niri"
       },
       {
        "key": "look.blur_size",
@@ -1058,7 +976,7 @@
        "min": 1,
        "max": 20,
        "step": 1,
-       "hl": "decoration:blur:size"
+       "use": "niri"
       },
       {
        "key": "look.blur_passes",
@@ -1068,14 +986,14 @@
        "min": 1,
        "max": 6,
        "step": 1,
-       "hl": "decoration:blur:passes"
+       "use": "niri"
       },
       {
        "key": "look.blur_xray",
        "label": "Blur X-ray",
        "type": "toggle",
        "default": false,
-       "hl": "decoration:blur:xray"
+       "use": "niri"
       },
       {
        "key": "look.blur_noise",
@@ -1085,14 +1003,14 @@
        "min": 0.0,
        "max": 1.0,
        "step": 0.01,
-       "hl": "decoration:blur:noise"
+       "use": "niri"
       },
       {
        "key": "look.shadow",
        "label": "Shadows",
        "type": "toggle",
        "default": false,
-       "hl": "decoration:shadow:enabled"
+       "use": "niri"
       },
       {
        "key": "look.shadow_range",
@@ -1102,28 +1020,14 @@
        "min": 0,
        "max": 64,
        "step": 1,
-       "hl": "decoration:shadow:range"
+       "use": "niri"
       },
       {
        "key": "look.shadow_sharp",
        "label": "Hard-edged shadow",
        "type": "toggle",
        "default": true,
-       "hl": "decoration:shadow:sharp"
-      },
-      {
-       "key": "look.glow",
-       "label": "Glow",
-       "type": "toggle",
-       "default": false,
-       "hl": "decoration:glow:enabled"
-      },
-      {
-       "key": "look.wobble",
-       "label": "Wobbly windows",
-       "type": "toggle",
-       "default": false,
-       "hl": "decoration:wobble:enabled"
+       "use": "niri"
       }
      ]
     },
@@ -1132,58 +1036,40 @@
      "en": "LAYOUT",
      "items": [
       {
-       "key": "look.layout",
-       "label": "Tiling",
+       "key": "look.center_column",
+       "label": "Centre the focused column",
        "type": "enum",
-       "default": "dwindle",
+       "default": "never",
        "options": [
-        "dwindle",
-        "master",
-        "scrolling"
+        "never",
+        "on-overflow",
+        "always"
        ],
-       "hl": "general:layout"
+       "use": "niri"
       },
       {
-       "key": "look.resize_on_border",
-       "label": "Drag window edges to resize",
+       "key": "look.no_csd",
+       "label": "Ask apps to drop their own title bars",
        "type": "toggle",
        "default": true,
-       "hl": "general:resize_on_border"
+       "use": "niri"
       },
       {
-       "key": "look.snap",
-       "label": "Floating windows snap",
+       "key": "look.single_center",
+       "label": "Centre a lone window",
        "type": "toggle",
-       "default": true,
-       "hl": "general:snap:enabled"
+       "default": false,
+       "use": "niri"
       },
       {
-       "key": "look.preserve_split",
-       "label": "Keep splits (dwindle)",
-       "type": "toggle",
-       "default": true,
-       "hl": "dwindle:preserve_split"
-      },
-      {
-       "key": "look.master_new",
-       "label": "New window is (master)",
-       "type": "enum",
-       "default": "master",
-       "options": [
-        "master",
-        "slave"
-       ],
-       "hl": "master:new_status"
-      },
-      {
-       "key": "look.master_factor",
-       "label": "Master share",
+       "key": "look.column_width",
+       "label": "New window width (share of the screen)",
        "type": "float",
-       "default": 0.55,
+       "default": 0.5,
        "min": 0.2,
-       "max": 0.8,
+       "max": 1.0,
        "step": 0.05,
-       "hl": "master:mfact"
+       "use": "niri"
       }
      ]
     },
@@ -1315,7 +1201,7 @@
        "label": "Title strip on windows",
        "type": "toggle",
        "default": true,
-       "use": "hypr",
+       "use": "niri",
        "soon": true
       },
       {
@@ -1860,7 +1746,7 @@
        "label": "Media keys work when locked",
        "type": "toggle",
        "default": true,
-       "use": "hypr",
+       "use": "niri",
        "soon": true
       }
      ]
@@ -1984,55 +1870,17 @@
         "short",
         "full"
        ],
-       "use": "hypr"
+       "use": "niri"
       },
       {
        "key": "motion.speed",
-       "label": "Speed (lower is faster)",
+       "label": "Slowdown (1 is normal, lower is faster)",
        "type": "float",
-       "default": 2.0,
-       "min": 0.5,
-       "max": 10.0,
-       "step": 0.5,
-       "use": "hypr"
-      },
-      {
-       "key": "motion.window_style",
-       "label": "Windows open with",
-       "type": "enum",
-       "default": "slide",
-       "options": [
-        "slide",
-        "popin",
-        "gnomed"
-       ],
-       "use": "hypr"
-      },
-      {
-       "key": "motion.workspace_style",
-       "label": "Workspaces change with",
-       "type": "enum",
-       "default": "slide",
-       "options": [
-        "slide",
-        "slidevert",
-        "fade"
-       ],
-       "use": "hypr"
-      },
-      {
-       "key": "motion.curve",
-       "label": "Curve (four numbers)",
-       "type": "text",
-       "default": "0.2 0 0 1",
-       "use": "hypr"
-      },
-      {
-       "key": "motion.layers",
-       "label": "Animate panels",
-       "type": "toggle",
-       "default": false,
-       "use": "hypr"
+       "default": 1.0,
+       "min": 0.2,
+       "max": 5.0,
+       "step": 0.1,
+       "use": "niri"
       },
       {
        "key": "motion.shell",
@@ -2118,7 +1966,7 @@
    "jp": "窓則",
    "en": "WINDOWS",
    "group": "advanced",
-   "blurb": "Rules for windows, matched by class and title.",
+   "blurb": "Rules for windows, matched by app id and title (regular expressions).",
    "sections": [
     {
      "jp": "窓則",
@@ -2135,34 +1983,19 @@
         "effect",
         "value"
        ],
-       "example": "^firefox$ ·  · workspace · 2",
-       "use": "hypr",
+       "example": "^firefox$ ·  · workspace · web",
+       "use": "niri",
        "effects": [
         "float",
-        "tile",
-        "fullscreen",
         "maximize",
-        "pin",
-        "center",
-        "no_blur",
-        "no_shadow",
-        "no_anim",
-        "no_dim",
+        "fullscreen",
         "no_focus",
-        "stay_focused",
-        "opaque",
-        "keep_aspect_ratio",
-        "pseudo",
-        "idle_inhibit",
-        "no_initial_focus",
-        "suppress_event",
         "workspace",
-        "size",
-        "move",
+        "output",
         "opacity",
-        "monitor",
-        "border_size",
-        "rounding"
+        "rounding",
+        "block_capture",
+        "width"
        ]
       }
      ]
@@ -2190,16 +2023,15 @@
         "effect",
         "value"
        ],
-       "example": "^samurai-panel$ · no_anim · ",
-       "use": "hypr",
+       "example": "^notifications$ · block_capture · ",
+       "use": "niri",
        "effects": [
+        "opacity",
         "blur",
-        "no_anim",
-        "dim_around",
         "xray",
-        "above_lock",
-        "ignore_alpha",
-        "order"
+        "shadow",
+        "block_capture",
+        "rounding"
        ]
       }
      ]
@@ -2226,7 +2058,7 @@
         "command"
        ],
        "example": "nextcloud --background",
-       "use": "hypr"
+       "use": "niri"
       }
      ]
     }
@@ -2253,7 +2085,7 @@
         "value"
        ],
        "example": "MOZ_ENABLE_WAYLAND · 1",
-       "use": "hypr"
+       "use": "niri"
       }
      ]
     }
@@ -2264,7 +2096,7 @@
    "jp": "個別",
    "en": "PER-APP",
    "group": "advanced",
-   "blurb": "Override the look for one app.",
+   "blurb": "Override the look for one app (matched by app id).",
    "sections": [
     {
      "jp": "個別",
@@ -2281,13 +2113,10 @@
         "rounding",
         "border",
         "blur",
-        "shadow",
-        "dim",
-        "anim",
-        "opaque"
+        "shadow"
        ],
-       "example": "^kitty$ · 0.92 · inherit · inherit · on · inherit · inherit · inherit · off",
-       "use": "hypr"
+       "example": "^kitty$ · 0.92 ·  ·  · on · ",
+       "use": "niri"
       }
      ]
     }
@@ -2342,7 +2171,7 @@
       },
       {
        "key": "",
-       "label": "Check the Hyprland config Samurai wrote",
+       "label": "Check the niri config Samurai wrote",
        "type": "action",
        "cmd": [
         "samurai",
@@ -2351,7 +2180,7 @@
       },
       {
        "key": "",
-       "label": "Rewrite the Hyprland config from settings",
+       "label": "Rewrite the niri config from settings",
        "type": "action",
        "cmd": [
         "samurai",

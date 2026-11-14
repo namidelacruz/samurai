@@ -1,7 +1,7 @@
 // The Samurai login screen: the lock face in "login" mode, talking to greetd.
-// Runs as the greeter user inside a bare Hyprland started by greetd (see samurai-greeter-setup).
+// Runs as the greeter user inside a bare niri started by greetd (see samurai-greeter-setup).
 // It reads one small file written by the installer: /etc/samurai/greeter.json
-//   { "base": "black", "users": ["nami"], "sessions": [{ "name": "Samurai", "exec": "start-hyprland" }], "wall": "/usr/share/samurai/greeter-black.svg" }
+//   { "base": "black", "users": ["nami"], "sessions": [{ "name": "Samurai", "exec": "samurai-session" }], "wall": "/usr/share/samurai/greeter-black.svg" }
 import QtQuick
 import Quickshell
 import Quickshell.Io
@@ -17,7 +17,7 @@ ShellRoot {
     property string said: ""
     property bool bad: false
     property bool busy: false
-    property var launchCmd: ["start-hyprland"]
+    property var launchCmd: ["samurai-session"]
 
     CoreBase {
         id: kernel
@@ -61,7 +61,7 @@ ShellRoot {
                 onSubmit: function(user, secret) {
                     if (root.busy || user === "") return
                     var s = sessions.length ? sessions[session] : null
-                    root.launchCmd = s ? String(s.exec).split(" ") : ["start-hyprland"]
+                    root.launchCmd = s ? String(s.exec).split(" ") : ["samurai-session"]
                     root.busy = true; root.bad = false; root.said = ""; root.secret = secret
                     Greetd.createSession(user)
                 }

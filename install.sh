@@ -1,22 +1,27 @@
 #!/bin/sh
 # Samurai installer. One status bar; every line of detail goes to the log.
-#   ./install.sh              install for this user
-#   ./install.sh --greeter    also set up the Samurai login screen (greetd)
+#   ./install.sh              install for this user, login screen included (greetd)
+#   ./install.sh --no-greeter leave the login screen as it is
 #   ./install.sh --update     same steps, quieter wording (used by `samurai update install`)
 #   ./install.sh --uninstall  remove what the installer put in place (your settings stay)
-# It installs to /opt/samurai, links commands into /usr/local/bin, and writes Hyprland config
-# under ~/.config/hypr. It never touches the bootloader, the initramfs or firmware settings.
+# It installs to /opt/samurai, links commands into /usr/local/bin, and writes Samurai's own niri
+# config under ~/.config/samurai/niri (your ~/.config/niri is not touched). The login screen
+# step writes /etc/greetd/config.toml and makes greetd the login manager from the next boot; what
+# was there before is kept and --uninstall puts it back.
+# It never touches the bootloader, the initramfs or firmware settings.
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
 LOGDIR=${XDG_STATE_HOME:-$HOME/.local/state}/samurai
 LOG=$LOGDIR/install.log
 mkdir -p "$LOGDIR"; : > "$LOG"
-MODE=install; GREETER=0
+MODE=install; GREETER=1
 for a in "$@"; do case "$a" in
-    --greeter) GREETER=1;; --update) MODE=update;; --uninstall) MODE=uninstall;;
-    -h|--help) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 0;;
+    --greeter) GREETER=1;; --no-greeter) GREETER=0;; --update) MODE=update;; --uninstall) MODE=uninstall;;
+    -h|--help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0;;
     *) echo "install.sh: unknown option $a" >&2; exit 2;;
 esac; done
+# an update keeps the choice made at install time
+[ "$MODE" != update ] || [ -f /etc/samurai/greeter.json ] || GREETER=0
 [ "$(id -u)" != 0 ] || { echo "Run install.sh as yourself, not as root: it asks for the password when it needs it." >&2; exit 1; }
 # root steps: sudo at a terminal, pkexec from the settings window
 if [ -t 0 ] && command -v sudo >/dev/null 2>&1; then AS_ROOT=sudo; elif command -v pkexec >/dev/null 2>&1; then AS_ROOT=pkexec; else AS_ROOT=sudo; fi
@@ -47,9 +52,10 @@ check_needs() {
     miss=""
     for c in cargo git; do command -v $c >/dev/null 2>&1 || miss="$miss $c"; done
     [ -z "$miss" ] || { echo "missing build tools:$miss"; return 1; }
-    for c in Hyprland hyprctl; do command -v $c >/dev/null 2>&1 || echo "note: $c is not installed yet (Samurai needs Hyprland 0.57 or newer)"; done
+    if command -v niri >/dev/null 2>&1; then echo "niri: $(niri --version 2>/dev/null)"
+    else echo "note: niri is not installed yet (Samurai needs niri 25.11 or newer; 26.04 for per-app blur)"; fi
     command -v qs >/dev/null 2>&1 || command -v quickshell >/dev/null 2>&1 || echo "note: quickshell is not installed yet"
-    for c in nmcli wpctl brightnessctl grim slurp wl-copy; do command -v $c >/dev/null 2>&1 || echo "note: optional tool $c is not installed"; done
+    for c in nmcli wpctl brightnessctl grim slurp wl-copy gammastep; do command -v $c >/dev/null 2>&1 || echo "note: optional tool $c is not installed"; done
     if command -v fc-list >/dev/null 2>&1; then
         fc-list | grep -qi "IBM Plex Mono" || echo "note: font IBM Plex Mono is not installed (a fallback mono font will be used)"
         fc-list | grep -qi "Noto Sans CJK JP\|Noto Sans JP" || echo "note: font Noto Sans CJK JP is not installed (kanji may use a fallback)"
@@ -60,7 +66,7 @@ build() { cd "$HERE" && cargo build --release --locked; }
 stage() { # everything is laid out in a staging folder first, then swapped in at once
     S=$LOGDIR/stage; rm -rf "$S"; mkdir -p "$S/bin" "$S/share"
     cp "$HERE/target/release/samurai" "$HERE/target/release/shadow" "$S/bin/" || return 1
-    cp "$HERE/packaging/bin/samurai-greeter-setup" "$S/bin/" && chmod 0755 "$S/bin/"* || return 1
+    cp "$HERE"/packaging/bin/* "$S/bin/" && chmod 0755 "$S/bin/"* || return 1
     cp -r "$HERE/shell" "$S/shell" || return 1
     cp "$HERE/packaging/share/"*.desktop "$S/share/" || return 1
     (cd "$HERE" && git rev-parse HEAD 2>/dev/null) > "$S/share/COMMIT" || true
@@ -89,13 +95,20 @@ seal() { # the one-time seal (kept if this machine already has one) and the publ
     /opt/samurai/bin/samurai seal show | grep -q '"forged":true' || /opt/samurai/bin/samurai seal forge > /dev/null || return 1
     /opt/samurai/bin/samurai seal decoy
 }
-greeter() { # exit 3 = something it needs is not installed: skip it, keep the install
+greeter() { # the login screen. A missing part is installed when the system has pacman or dnf;
+            # if it still cannot be set up, that is a note, not a failed install (exit 3 = part missing).
+    if ! command -v greetd >/dev/null 2>&1; then
+        if command -v pacman >/dev/null 2>&1; then $AS_ROOT pacman -S --needed --noconfirm greetd || true
+        elif command -v dnf >/dev/null 2>&1; then $AS_ROOT dnf install -y greetd || true
+        fi
+    fi
     $AS_ROOT /opt/samurai/bin/samurai-greeter-setup "$(/opt/samurai/bin/samurai get greeter.base | tr -d '"')" "$(id -un)" && return 0
-    [ $? = 3 ] && { echo "note: the login screen was skipped (see the line above); run ./install.sh --greeter again later"; return 0; }
+    [ $? = 3 ] && { echo "note: LOGIN SCREEN NOT SET UP (see the line above); fix that and run ./install.sh again"; return 0; }
     return 1
 }
 reload() { # a running session picks the new version up; never fails the install
-    pgrep -x Hyprland >/dev/null 2>&1 && [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ] && { hyprctl reload; /opt/samurai/bin/samurai shell restart; } || true
+    # niri reloads its config by itself; only the frame needs a restart, and only inside a Samurai session
+    [ -n "${NIRI_SOCKET:-}" ] && pgrep -f "(qs|quickshell) -c samurai" >/dev/null 2>&1 && /opt/samurai/bin/samurai shell restart || true
 }
 remove() {
     $AS_ROOT sh -c '
@@ -109,7 +122,7 @@ remove() {
 
 if [ "$MODE" = uninstall ]; then
     TOTAL=1; step "removing" remove; bar "removed"; [ -t 1 ] && echo
-    echo " Your settings (~/.config/samurai), your seal and ~/.config/hypr were left in place."
+    echo " Your settings and your seal (~/.config/samurai) were left in place. The previous login screen is back from the next boot."
     exit 0
 fi
 TOTAL=$((7 + GREETER))
@@ -117,15 +130,16 @@ step "checking this machine" check_needs
 step "building" build
 step "preparing files" stage
 step "installing (asks for your password once)" place
-step "writing the Hyprland config" user_files
+step "writing the niri config" user_files
 step "forging this machine's seal" seal
-[ $GREETER = 0 ] || step "setting up the login screen" greeter
+[ $GREETER = 0 ] || step "setting up the login screen (takes effect at the next boot)" greeter
 step "finishing" reload
 bar "done"; [ -t 1 ] && echo
 NOTES=$(grep -c '^note:' "$LOG" || true)
 if [ "$MODE" = update ]; then echo " Samurai is up to date."; else
     echo " Samurai is installed. Log out and choose “Samurai” at the login screen."
-    grep -q "is your own file and was left alone" "$LOG" && echo " Your own ~/.config/hypr/hyprland.lua was kept: add  require(\"samurai.generated\")  to it."
+    if grep -q "^login screen: set" "$LOG"; then echo " The Samurai login screen replaces your current one from the next boot."
+    elif [ $GREETER = 1 ]; then echo " ! The login screen was NOT set up: $(grep -B1 '^note: LOGIN SCREEN' "$LOG" | head -1)"; fi
 fi
 [ "$NOTES" = 0 ] || echo " $NOTES notes about missing optional parts are in $LOG"
 exit 0

@@ -1,0 +1,13 @@
+#!/bin/sh
+# What greetd runs: the Samurai login screen (Quickshell inside a bare niri).
+# If that cannot start, or dies within a few seconds, greetd's own text login takes over, so a
+# broken graphical greeter can never lock you out.
+LOG=/tmp/samurai-greeter.$(id -u).log
+start=$(date +%s)
+if command -v niri >/dev/null 2>&1 && [ -f /etc/samurai/greeter-niri.kdl ]; then
+    niri -c /etc/samurai/greeter-niri.kdl > "$LOG" 2>&1
+    rc=$?
+    [ $(( $(date +%s) - start )) -lt 8 ] || exit $rc
+fi
+echo "The Samurai login screen could not start (detail: $LOG). Text login:"
+exec agreety --cmd /opt/samurai/bin/samurai-session

@@ -128,7 +128,7 @@ pub fn forge(erase: bool) -> Result<Value, String> {
     }
     let d = draw(&mut seed);
     debug_assert!(seed.iter().all(|b| *b == 0), "the seed is gone once the drawing exists");
-    let red = crate::hypr::accent();
+    let red = crate::niri::accent();
     let black = svg(&d, "black", &red, true);
     let white = svg(&d, "white", &red, true);
     let mark = mark_of(&black);
