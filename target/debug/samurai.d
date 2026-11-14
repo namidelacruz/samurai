@@ -1,0 +1,1 @@
+/home/claude/samurai/target/debug/samurai: /home/claude/samurai/samurai/src/../../shell/settings.schema.json /home/claude/samurai/samurai/src/binds.rs /home/claude/samurai/samurai/src/hypr.rs /home/claude/samurai/samurai/src/main.rs /home/claude/samurai/samurai/src/misc.rs /home/claude/samurai/samurai/src/seal.rs /home/claude/samurai/samurai/src/store.rs

@@ -1,0 +1,9 @@
+[workspace]
+resolver = "2"
+members = ["samurai", "services/core", "services/lua", "services/niri"]
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4
+strip = true
