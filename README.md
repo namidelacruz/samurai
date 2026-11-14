@@ -26,14 +26,19 @@ for the login screen, a Rust toolchain and git. Fonts: IBM Plex Mono and Noto Sa
 ```sh
 ./install.sh              # one status bar; detail in ~/.local/state/samurai/install.log
 ./install.sh --no-greeter # leave your login screen as it is
-./install.sh --uninstall  # remove it; settings and seal stay, the old login screen comes back
+./install.sh --keep-niri-config  # do not make Samurai niri's default
+./install.sh --uninstall  # remove it; settings and seal stay, old niri config and login screen come back
 ```
 
 Log out and pick **Samurai**.
 
-**Your own niri setup is not touched.** Samurai keeps its config in `~/.config/samurai/niri/`
-and its session starts niri pointed at that folder; the plain niri session still reads
-`~/.config/niri/config.kdl`. Your own KDL for Samurai goes in `~/.config/samurai/niri/user.kdl`.
+**Samurai becomes niri's default.** Samurai's config lives in `~/.config/samurai/niri/`. The
+installer replaces `~/.config/niri/config.kdl` with one `include` line pointing there, so every
+niri session, however it is started, is Samurai. Your previous `config.kdl` is kept beside it as
+`config.kdl.before-samurai` and `--uninstall` puts it back. It is not merged in: its binds would
+clash with Samurai's. Anything you want from it goes in `~/.config/samurai/niri/user.kdl`.
+niri checks the new file before it replaces the old one; if niri refuses it, yours stays.
+If niri is already running when you install, it switches to Samurai on the spot.
 
 A config niri refuses never replaces a working one: every change is checked with
 `niri validate` first, and a setting whose result is refused goes back to its old value. If

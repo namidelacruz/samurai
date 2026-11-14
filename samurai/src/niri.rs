@@ -1,6 +1,7 @@
 //! Settings -> niri config (KDL, niri 25.11 or newer; written against 26.04).
 //!
-//! Samurai keeps its own config folder and never touches ~/.config/niri:
+//! Samurai keeps its own config folder. The backend never writes ~/.config/niri; the installer
+//! may point niri's own config.kdl at this folder with one include line (install.sh):
 //!   ~/.config/samurai/niri/config.kdl      the root: includes the two files below
 //!   ~/.config/samurai/niri/generated.kdl   written here, from settings; never edited by hand
 //!   ~/.config/samurai/niri/user.kdl        the user's own KDL, included last; never written again
@@ -426,9 +427,13 @@ pub fn apply() -> Result<Vec<String>, String> {
     store::atomic_write(&gen, &text).map_err(|e| format!("{}: {e}", gen.display()))?;
     done.push(format!("wrote {}", gen.display()));
     let _ = store::set_state("base", Value::String(base_now()));
-    // niri watches its config and reloads by itself; with user.kdl in play, say so if the whole is refused
+    // with user.kdl in play, say so if the whole is refused
     if let Some(Err(e)) = validate(&root) {
         done.push(format!("warning: with your user.kdl the whole config is refused; niri keeps the last good one:\n{e}"));
+    } else if std::env::var_os("NIRI_SOCKET").is_some() {
+        // niri watches its config file, but not every version watches the files it includes
+        // (and ours is reached through an include): ask the running niri to read it again
+        let _ = niri(&["msg", "action", "load-config-file"]);
     }
     Ok(done)
 }
