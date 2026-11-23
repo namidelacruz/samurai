@@ -123,7 +123,8 @@ impl Wm {
         serde_json::json!({
             "windows": wins,
             "monitors": self.monitors.iter().map(|m| [m.x, m.y, m.w, m.h]).collect::<Vec<_>>(),
-            "overview": self.ov.open, "query": self.ov.query, "locked": self.lock.locked,
+            "overview": self.ov.open, "query": self.ov.query,
+            "ov_zone": if self.ov.zone == 1 { "apps" } else { "windows" }, "ov_sel": self.ov.sel, "ov_cols": self.ov.app_cols, "ov_apps": self.ov.apps.len(), "locked": self.lock.locked,
             "ground": if self.theme.night { "night" } else { "paper" }, "scale": self.scale,
             "config_error": self.cfg_error,
         })

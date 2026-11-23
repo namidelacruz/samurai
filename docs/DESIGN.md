@@ -101,14 +101,24 @@ At scale 1 (everything multiplies with Settings › Look › Size):
 
 ## 7. The overview (Super)
 
-- The desktop dims behind a glass panel; every window flies to a card laid out in a grid that
-  keeps their proportions.
-- The search line is focused at once. Results group as Windows, Apps, Settings, Calculator, Run.
+- The desktop dims behind a glass layer. The top part holds the open windows as cards in a grid
+  that keeps their proportions; below them, under a small "APPS · n" label, every installed app:
+  its own icon from the icon theme (48 px) and its name, in cells of 104 × 98 px, pinned apps
+  first (a small accent dot) and the rest by name. Settings › Look › "Apps in the overview" turns
+  the grid into a compact list (24 px icons, 40 px rows, as many columns as fit). With no windows
+  open, the apps take the whole space and the selection starts there.
+- There is no search field. A quiet line at the top says what typing does; once you type, it
+  becomes a small filter pill and a results list (Windows, Apps, Settings, Calculator, Run).
   `= 2^10` is a sum (Enter copies it); `> cmd` runs a command in a terminal.
-- Arrow keys and Tab move between cards and results; Enter opens; Escape or Super closes.
+- Tab switches between windows and apps; arrow keys move (Up/Down by a whole row in the apps);
+  Enter opens; the wheel scrolls the apps; right-click pins or unpins; Escape or Super closes.
   Delete on a card closes that window.
-- Tucked windows wait on the shelf, a thin row along the bottom.
-- The panel also has Lock, Sleep, Log out, Restart and Power off.
+- The quick panel on the right is compact (284 px): the time, six small tiles (Wi-Fi,
+  Bluetooth, Quiet, Night light, night/paper, Screenshot: icon and one word, the state is the
+  fill), a row each for Wi-Fi and Bluetooth that opens into its list (networks with signal bars
+  and a lock; paired devices), an inline password field for a new secured network, slim volume
+  and brightness sliders, the battery, and a row of Lock, Sleep, Restart, Power off, then
+  Settings. Its height follows what it holds.
 
 ## 8. Motion
 

@@ -35,6 +35,11 @@
   "where": "Settings › Look"
  },
  {
+  "label": "Apps in the overview",
+  "page": "look",
+  "where": "Settings › Look"
+ },
+ {
   "label": "Time in the corner",
   "page": "look",
   "where": "Settings › Look"

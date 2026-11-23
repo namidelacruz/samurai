@@ -176,6 +176,7 @@ pub fn wm_toml() -> String {
     s += &format!("mark = {}\n", q(&seal::mark()));
     s += &format!("show_clock = {}\nshow_mark = {}\n", b("look.show_clock"), b("look.show_mark"));
     s += &format!("ui_font = {}\nmono_font = {}\n", q(&g("look.ui_font")), q(&g("look.mono_font")));
+    s += &format!("apps_view = {}\n", q(if g("look.apps_view") == "list" { "list" } else { "icons" }));
     s += "\n[windows]\n";
     s += &format!("gap = {}\n", store::get_f64("windows.gap") as i64);
     s += &format!("strip_follows_app = {}\n", b("windows.strip_follows_app"));

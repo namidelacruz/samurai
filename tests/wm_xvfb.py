@@ -12,6 +12,9 @@ tmp = Path(tempfile.mkdtemp(prefix="samurai-wmtest-"))
 disp = ":%d" % (90 + os.getpid() % 9)
 env = dict(os.environ, PATH=str(ROOT / "tests/x11/net") + ":" + os.environ["PATH"], NET_CALLS=str(tmp / "calls"), DISPLAY=disp, XDG_RUNTIME_DIR=str(tmp), SAMURAI_CONFIG=str(tmp / "config"), HOME=str(tmp / "home"), USER="samtest")
 (tmp / "home").mkdir()
+# an app of our own, first by name, that leaves a mark when it runs
+appdir = tmp / "home/.local/share/applications"; appdir.mkdir(parents=True)
+(appdir / "aaa-samurai-test.desktop").write_text(f"[Desktop Entry]\nType=Application\nName=AAA Samurai test\nExec=touch {tmp}/app-ran\nIcon=utilities-terminal\n")
 procs = []
 def spawn(*a, **k):
     p = subprocess.Popen(a, env=env, stdout=subprocess.DEVNULL, stderr=k.get("err", subprocess.DEVNULL)); procs.append(p); return p
@@ -50,6 +53,18 @@ try:
     check("a tap on Super opens the overview", state().get("overview") is True)
     keys("tap", "Escape"); time.sleep(0.6)
     check("Escape closes it", state().get("overview") is False)
+    # the apps, under the windows
+    msg("overview"); time.sleep(1.0)
+    keys("tap", "Tab"); time.sleep(0.3)
+    st = state()
+    check("Tab moves to the apps; every installed app is there (ours too)", st.get("ov_zone") == "apps" and st.get("ov_apps", 0) >= 1)
+    keys("tap", "Right"); time.sleep(0.2); keys("tap", "Down"); time.sleep(0.3)
+    st = state(); cols = st.get("ov_cols", 0)
+    check("arrow keys move through the grid (Down = a whole row)", cols >= 1 and st.get("ov_sel") == min(1 + cols, st["ov_apps"] - 1))
+    keys("type", "aaa sam"); time.sleep(0.4)
+    check("typing filters quietly", state().get("query") == "aaa sam")
+    keys("tap", "Return"); time.sleep(1.2)
+    check("Enter opens the app that was found", (tmp / "app-ran").exists() and state().get("overview") is False)
     msg("tuck"); time.sleep(0.4)
     pid = wm.pid
     msg("restart"); time.sleep(2)

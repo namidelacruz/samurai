@@ -394,3 +394,89 @@ pub fn mask_a8(w: u32, h: u32, inset: f32, r: f32) -> Vec<u8> {
 pub fn tiny_skia_color(c: Rgba) -> tiny_skia::Color {
     tiny_skia::Color::from_rgba8(c.0, c.1, c.2, c.3)
 }
+
+// ── app icons from the icon theme ──────────────────────────────────────────────────────────
+
+thread_local! {
+    static APP_ICONS: std::cell::RefCell<std::collections::HashMap<(String, u32), Option<Pixmap>>> = Default::default();
+}
+
+/// Where an app's icon (the Icon= of its .desktop file) lives: an absolute path, or a name looked
+/// up in the usual icon themes (Papirus first: Samurai sets it), then hicolor and pixmaps.
+pub fn find_app_icon(name: &str) -> Option<std::path::PathBuf> {
+    use std::path::{Path, PathBuf};
+    if name.is_empty() {
+        return None;
+    }
+    if name.starts_with('/') {
+        return Path::new(name).is_file().then(|| PathBuf::from(name));
+    }
+    let home = crate::config::home();
+    let bases = [home.join(".local/share/icons"), home.join(".icons"), PathBuf::from("/usr/local/share/icons"), PathBuf::from("/usr/share/icons")];
+    let themes = ["Papirus-Dark", "Papirus", "Adwaita", "breeze", "hicolor"];
+    let subs = ["scalable/apps", "48x48/apps", "64x64/apps", "96x96/apps", "128x128/apps", "256x256/apps", "apps/48", "apps/scalable", "512x512/apps", "32x32/apps"];
+    for t in themes {
+        for b in &bases {
+            let dir = b.join(t);
+            if !dir.is_dir() {
+                continue;
+            }
+            for sub in subs {
+                for ext in ["svg", "png"] {
+                    let p = dir.join(sub).join(format!("{name}.{ext}"));
+                    if p.is_file() {
+                        return Some(p);
+                    }
+                }
+            }
+        }
+    }
+    for ext in ["svg", "png", "xpm"] {
+        let p = PathBuf::from(format!("/usr/share/pixmaps/{name}.{ext}"));
+        if p.is_file() && ext != "xpm" {
+            return Some(p);
+        }
+    }
+    None
+}
+
+fn load_app_icon(name: &str, size: u32) -> Option<Pixmap> {
+    let path = find_app_icon(name)?;
+    let data = std::fs::read(&path).ok()?;
+    let mut out = Pixmap::new(size, size)?;
+    if path.extension().is_some_and(|e| e == "svg") {
+        let tree = resvg::usvg::Tree::from_data(&data, &resvg::usvg::Options::default()).ok()?;
+        let sz = tree.size();
+        let k = size as f32 / sz.width().max(sz.height()).max(1.0);
+        let dx = (size as f32 - sz.width() * k) / 2.0;
+        let dy = (size as f32 - sz.height() * k) / 2.0;
+        resvg::render(&tree, Transform::from_row(k, 0.0, 0.0, k, dx, dy), &mut out.as_mut());
+    } else {
+        let img = Pixmap::decode_png(&data).ok()?;
+        let k = size as f32 / img.width().max(img.height()).max(1) as f32;
+        let paint = tiny_skia::PixmapPaint { quality: tiny_skia::FilterQuality::Bicubic, ..Default::default() };
+        out.draw_pixmap(0, 0, img.as_ref(), &paint, Transform::from_scale(k, k), None);
+    }
+    Some(out)
+}
+
+/// Draw an app's own icon at (x, y), `size` px. Returns false when it has none (the caller then
+/// draws a stroke icon instead). Results, found or not, are kept for the session.
+pub fn app_icon(px: &mut Pixmap, name: &str, x: f32, y: f32, size: f32) -> bool {
+    let key = (name.to_string(), size.round() as u32);
+    let pm = APP_ICONS.with(|c| {
+        if let Some(p) = c.borrow().get(&key) {
+            return p.clone();
+        }
+        let p = load_app_icon(name, key.1);
+        c.borrow_mut().insert(key.clone(), p.clone());
+        p
+    });
+    match pm {
+        Some(p) => {
+            px.draw_pixmap(x.round() as i32, y.round() as i32, p.as_ref(), &tiny_skia::PixmapPaint::default(), Transform::identity(), None);
+            true
+        }
+        None => false,
+    }
+}

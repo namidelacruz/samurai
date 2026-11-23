@@ -38,6 +38,8 @@ PAGES = [
       F("look.scale", "Text and interface size", 1.0, 1.0, 2.5, 0.25, unit="×", help="One size for every app, old and new. 1.5 suits a 14\" 2.5K screen."),
       E("look.motion", "Motion", "gentle", opts(("full", "Full"), ("gentle", "Gentle"), ("off", "Off")), help="Gentle: quick and short. Off: everything just appears."),
       E("look.corners", "Window corners", "rounded", opts(("rounded", "Rounded"), ("square", "Square")))),
+    sec("Overview (Super)",
+      E("look.apps_view", "Apps in the overview", "icons", opts(("icons", "Icons"), ("list", "List")), help="Every installed app, under your open windows. Type to filter."),),
     sec("On the desktop",
       T("look.show_clock", "Time in the corner", True, help="A small pill, top right. It hides while a window covers it."),
       T("look.show_mark", "This machine's mark", True, help="The mark of your one-time ink, bottom left.")),
@@ -124,7 +126,7 @@ PAGES = [
       T("windows.unredirect", "No tearing in full-screen video and games", True, help="A full-screen app gets the screen directly."),
       T("windows.remember", "Remember where windows were", True)),
     sec("In the overview",
-      L("apps.pinned", "Pinned apps", ["app"], "firefox", help="The row under the search field.")),
+      L("apps.pinned", "Pinned apps", ["app"], "firefox", help="Shown first among the apps in the overview. Right-click an app there to pin or unpin it.")),
     custom="apps"),
 
   page("power", "Power", "plug", "Locking, the screen going dark, and sleep.",

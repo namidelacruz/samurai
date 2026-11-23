@@ -49,6 +49,8 @@ pub struct Look {
     pub show_mark: bool,
     pub ui_font: String,
     pub mono_font: String,
+    /// apps in the overview: "icons" or "list"
+    pub apps_view: String,
 }
 
 impl Default for Look {
@@ -69,6 +71,7 @@ impl Default for Look {
             show_mark: true,
             ui_font: "Inter".into(),
             mono_font: "JetBrains Mono".into(),
+            apps_view: "icons".into(),
         }
     }
 }

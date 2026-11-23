@@ -20,6 +20,8 @@ pub struct App {
     pub terminal: bool,
     pub keywords: String,
     pub categories: String,
+    /// Icon= from its .desktop file: a theme name or a path
+    pub icon: String,
 }
 
 #[derive(Clone, Debug)]
@@ -92,6 +94,10 @@ pub struct Overview {
     pub pass: String,
     /// what the last network or Bluetooth action said
     pub note: Option<(String, bool)>,
+    /// the apps: first row shown, and the grid's shape as last drawn (for the arrow keys)
+    pub app_scroll: usize,
+    pub app_cols: usize,
+    pub app_rows: usize,
 }
 
 /// The quick panel's width: compact, but wide enough for a network name.
@@ -135,7 +141,7 @@ impl Overview {
                 }
                 let Ok(text) = std::fs::read_to_string(&p) else { continue };
                 let mut in_main = false;
-                let (mut name, mut exec, mut kw, mut cats) = (String::new(), String::new(), String::new(), String::new());
+                let (mut name, mut exec, mut kw, mut cats, mut icon) = (String::new(), String::new(), String::new(), String::new(), String::new());
                 let (mut hidden, mut term, mut is_app) = (false, false, false);
                 for line in text.lines() {
                     let l = line.trim();
@@ -152,6 +158,7 @@ impl Overview {
                         "Exec" => exec = strip_codes(v.trim()),
                         "Keywords" => kw = v.trim().to_string(),
                         "Categories" => cats = v.trim().to_string(),
+                        "Icon" => icon = v.trim().to_string(),
                         "NoDisplay" | "Hidden" if v.trim() == "true" => hidden = true,
                         "Terminal" => term = v.trim() == "true",
                         "Type" => is_app = v.trim() == "Application",
@@ -159,7 +166,7 @@ impl Overview {
                     }
                 }
                 if is_app && !hidden && !name.is_empty() && !exec.is_empty() {
-                    apps.push(App { id, name, exec, terminal: term, keywords: kw, categories: cats });
+                    apps.push(App { id, name, exec, terminal: term, keywords: kw, categories: cats, icon });
                 }
             }
         }
@@ -272,13 +279,17 @@ impl Wm {
         self.ov.query.clear();
         self.ov.sel = 0;
         self.ov.zone = 0;
+        self.ov.app_scroll = 0;
         self.ov.mon = self.pointer_monitor();
         self.ov.snap = self.status.get();
         self.status.refresh();
         self.overview_layout();
-        // start on the window you were in
+        // start on the window you were in; with no windows, on the apps
         if let Some(f) = self.focused.and_then(|f| self.client(f).map(|c| c.frame)) {
             self.ov.sel = self.ov.order.iter().position(|w| *w == f).unwrap_or(0);
+        }
+        if self.ov.order.is_empty() {
+            self.ov.zone = 1;
         }
         self.ov.dirty = true;
     }
@@ -303,13 +314,51 @@ impl Wm {
         self.ov.dirty = true;
     }
 
+    /// Where the window cards and the apps go, in screen coordinates: (cards, apps). The cards
+    /// take the top part when there are windows; the apps fill the rest (all of it when none).
+    pub fn ov_regions(&self, n_windows: usize) -> (Rect, Rect) {
+        let s = self.scale;
+        let m = self.ov.mon;
+        let pad = (40.0 * s) as i32;
+        let zone_w = m.w - (PANEL_W * s) as i32 - 3 * pad;
+        let top = (84.0 * s) as i32;
+        let bottom = (64.0 * s) as i32;
+        let avail = m.h - top - bottom;
+        let cards_h = if n_windows == 0 { 0 } else { (avail as f32 * 0.46) as i32 };
+        let cards = Rect::new(m.x + pad, m.y + top, zone_w, cards_h);
+        let head = (30.0 * s) as i32;
+        let apps_y = top + cards_h + if n_windows == 0 { 0 } else { (34.0 * s) as i32 } + head;
+        let apps = Rect::new(m.x + pad, m.y + apps_y, zone_w, (m.h - apps_y - bottom).max((60.0 * s) as i32));
+        (cards, apps)
+    }
+
+    /// The apps in the order shown: pinned first, then every other app by name.
+    pub fn app_order(&self) -> Vec<usize> {
+        let mut v = self.pinned();
+        for i in 0..self.ov.apps.len() {
+            if !v.contains(&i) {
+                v.push(i);
+            }
+        }
+        v
+    }
+
+    /// Keep the selected app in view.
+    fn app_follow(&mut self) {
+        let cols = self.ov.app_cols.max(1);
+        let rows = self.ov.app_rows.max(1);
+        let row = self.ov.sel / cols;
+        if row < self.ov.app_scroll {
+            self.ov.app_scroll = row;
+        } else if row >= self.ov.app_scroll + rows {
+            self.ov.app_scroll = row + 1 - rows;
+        }
+    }
+
     /// Lay the windows of this monitor out as cards in the space left of the panel.
     pub fn overview_layout(&mut self) {
         let s = self.scale;
         let m = self.ov.mon;
-        let panel_w = (324.0 * s) as i32;
-        let pad = (40.0 * s) as i32;
-        let area = Rect::new(m.x + pad, m.y + (250.0 * s) as i32, m.w - panel_w - 3 * pad, m.h - (250.0 * s) as i32 - (190.0 * s) as i32);
         let mut wins: Vec<(Window, Rect)> = vec![];
         // most recent first, so the window you were in is first
         let mut list: Vec<&crate::wm::Client> = self.clients.iter().filter(|c| !c.tucked && m.overlap(&self.visible_rect(c)) > 0).collect();
@@ -323,6 +372,7 @@ impl Wm {
         if n == 0 {
             return;
         }
+        let area = self.ov_regions(n).0;
         let gap = (32.0 * s) as f32;
         let title_h = (34.0 * s) as f32;
         let mut best = (0usize, 0f32);
@@ -402,7 +452,8 @@ impl Wm {
             *n <= 5
         });
         self.ov.items = items;
-        if self.ov.sel >= self.ov.items.len().max(1) {
+        // only the results list is limited by the results; the cards and apps keep their place
+        if !q.is_empty() && self.ov.sel >= self.ov.items.len().max(1) {
             self.ov.sel = 0;
         }
     }
@@ -548,7 +599,7 @@ impl Wm {
                         self.activate(it.act);
                     }
                 } else if self.ov.zone == 1 {
-                    if let Some(&i) = self.pinned().get(self.ov.sel) { self.activate(Act::App(i)); }
+                    if let Some(&i) = self.app_order().get(self.ov.sel) { self.activate(Act::App(i)); }
                 } else if let Some(&f) = self.ov.order.get(self.ov.sel) {
                     let w = self.client(f).map(|c| c.win);
                     self.overview_close(w);
@@ -566,15 +617,31 @@ impl Wm {
                 }
             }
             x::KS_TAB | x::KS_ISO_LEFT_TAB => {
-                self.ov.zone = (self.ov.zone + 1) % 2;
+                self.ov.zone = if self.ov.order.is_empty() { 1 } else { (self.ov.zone + 1) % 2 };
                 self.ov.sel = 0;
+                self.ov.app_scroll = 0;
+            }
+            x::KS_UP | x::KS_DOWN if !searching && self.ov.zone == 1 => {
+                // the apps are a grid: up and down move a whole row
+                let cols = self.ov.app_cols.max(1);
+                let n = self.app_order().len();
+                if sym == x::KS_UP {
+                    self.ov.sel = self.ov.sel.saturating_sub(cols);
+                } else if self.ov.sel + cols < n {
+                    self.ov.sel += cols;
+                } else if n > 0 {
+                    self.ov.sel = n - 1;
+                }
+                self.app_follow();
             }
             x::KS_LEFT | x::KS_UP if !searching || sym == x::KS_UP => {
                 self.ov.sel = self.ov.sel.saturating_sub(1);
+                if self.ov.zone == 1 && !searching { self.app_follow(); }
             }
             x::KS_RIGHT | x::KS_DOWN if !searching || sym == x::KS_DOWN => {
-                let n = if searching { self.ov.items.len() } else if self.ov.zone == 1 { self.pinned().len() } else { self.ov.order.len() };
+                let n = if searching { self.ov.items.len() } else if self.ov.zone == 1 { self.app_order().len() } else { self.ov.order.len() };
                 if self.ov.sel + 1 < n { self.ov.sel += 1; }
+                if self.ov.zone == 1 && !searching { self.app_follow(); }
             }
             _ => {
                 if state & (x::MOD_CTRL | x::MOD_ALT | x::MOD_SUPER) == 0 {
@@ -595,7 +662,26 @@ impl Wm {
         if self.ov.closing {
             return;
         }
+        if button == 4 || button == 5 {
+            // the wheel scrolls the apps (the quick panel does not scroll)
+            if self.ov.query.is_empty() {
+                let max = self.app_order().len().div_ceil(self.ov.app_cols.max(1)).saturating_sub(self.ov.app_rows.max(1));
+                self.ov.app_scroll = if button == 4 { self.ov.app_scroll.saturating_sub(1) } else { (self.ov.app_scroll + 1).min(max) };
+                self.ov.dirty = true;
+            }
+            return;
+        }
         let hit = self.ov.hot.iter().rev().find(|(r, _)| r.contains(x, y)).map(|h| h.1.clone());
+        if button == 3 {
+            // right-click an app: pin it first in the list, or unpin it
+            if let Some(Hot::App(i)) = hit {
+                if let Some(a) = self.ov.apps.get(i) {
+                    status::spawn(&format!("samurai pin {}", status::quote(&a.id)));
+                    self.say(format!("{} {}", a.name, if self.pinned().contains(&i) { "unpinned" } else { "pinned" }));
+                }
+            }
+            return;
+        }
         let card = self.ov.order.iter().rev().find(|f| self.ov.rects.get(f).is_some_and(|r| r.contains(x, y))).copied();
         match (hit, card) {
             (Some(Hot::Item(i)), _) => {
@@ -760,85 +846,136 @@ impl Wm {
         let is_hover = |hot: &Vec<(Rect, Hot)>| hover == Some(hot.len());
         let at = |r: Rect| Rect::new(r.x + m.x, r.y + m.y, r.w, r.h);
 
-        // search field
-        let sw = (640.0 * s).min(zone_w);
-        let (sx, sy, sh) = (cx - sw / 2.0, pad, 54.0 * s);
-        draw::rrect(&mut px, sx, sy, sw, sh, sh / 2.0, th.glass);
-        draw::rrect_line(&mut px, sx, sy, sw, sh, sh / 2.0, if searching { th.accent } else { th.line }, 1.0);
-        draw::icon(&mut px, "search", sx + 18.0 * s, sy + (sh - 20.0 * s) / 2.0, 20.0 * s, th.dim, 1.6);
-        let ty = sy + (sh - 17.0 * s * 1.25) / 2.0;
+        let (_, apps_abs) = self.ov_regions(self.ov.order.len());
+        let apps_r = Rect::new(apps_abs.x - m.x, apps_abs.y - m.y, apps_abs.w, apps_abs.h);
+        let (mut cols_drawn, mut rows_drawn, mut scroll_drawn) = (self.ov.app_cols, self.ov.app_rows, self.ov.app_scroll);
+        // the filter line: just a quiet hint until you type; then it shows what you typed
+        let sw = (520.0 * s).min(zone_w);
+        let (sx, sy, sh) = (cx - sw / 2.0, pad - 4.0 * s, 40.0 * s);
         if searching {
-            let w = f.draw(&mut px, Face::Ui, 17.0 * s, sx + 50.0 * s, ty, th.text, &self.ov.query);
-            draw::rrect(&mut px, sx + 52.0 * s + w, sy + 15.0 * s, 2.0 * s, sh - 30.0 * s, 1.0, th.accent);
+            draw::rrect(&mut px, sx, sy, sw, sh, sh / 2.0, th.glass);
+            draw::rrect_line(&mut px, sx, sy, sw, sh, sh / 2.0, th.accent, 1.0);
+            draw::icon(&mut px, "search", sx + 14.0 * s, sy + (sh - 16.0 * s) / 2.0, 16.0 * s, th.dim, 1.6);
+            let ty = sy + (sh - 15.0 * s * 1.25) / 2.0;
+            let w = f.draw(&mut px, Face::Ui, 15.0 * s, sx + 40.0 * s, ty, th.text, &self.ov.query);
+            draw::rrect(&mut px, sx + 42.0 * s + w, sy + 11.0 * s, 2.0 * s, sh - 22.0 * s, 1.0, th.accent);
+            hot.push((at(Rect::new(sx as i32, sy as i32, sw as i32, sh as i32)), Hot::Blank));
         } else {
-            f.draw(&mut px, Face::Ui, 17.0 * s, sx + 50.0 * s, ty, th.dim, "Search windows, apps, settings · > run · = calculate");
+            f.draw_centered(&mut px, Face::Ui, 12.5 * s, cx, sy + 12.0 * s, th.dim, "Type to find a window, an app or a setting  ·  = sums  ·  > commands");
         }
-        hot.push((at(Rect::new(sx as i32, sy as i32, sw as i32, sh as i32)), Hot::Blank));
 
         if searching {
             // results list, above the dimmed cards
-            let lw = sw;
-            let (lx, mut ly) = (sx, sy + sh + 12.0 * s);
+            let lw = sw.max((560.0 * s).min(zone_w));
+            let (lx, mut ly) = (cx - lw / 2.0, sy + sh + 10.0 * s);
             let rows = self.ov.items.len();
             let mut groups = 0;
             let mut last = "";
             for it in &self.ov.items {
                 if it.group != last { groups += 1; last = it.group; }
             }
-            let lh = rows as f32 * 52.0 * s + groups as f32 * 30.0 * s + 16.0 * s + if rows == 0 { 52.0 * s } else { 0.0 };
+            let lh = rows as f32 * 46.0 * s + groups as f32 * 28.0 * s + 16.0 * s + if rows == 0 { 46.0 * s } else { 0.0 };
             draw::rrect(&mut px, lx, ly, lw, lh, 14.0 * s, th.glass);
             draw::rrect_line(&mut px, lx, ly, lw, lh, 14.0 * s, th.line, 1.0);
             ly += 8.0 * s;
             if rows == 0 {
-                f.draw(&mut px, Face::Ui, 14.0 * s, lx + 20.0 * s, ly + 14.0 * s, th.dim, "Nothing matches. Start with > to run it as a command.");
+                f.draw(&mut px, Face::Ui, 13.5 * s, lx + 20.0 * s, ly + 12.0 * s, th.dim, "Nothing matches. Start with > to run it as a command.");
             }
             let mut last = "";
             for (i, it) in self.ov.items.iter().enumerate() {
                 if it.group != last {
                     last = it.group;
-                    f.draw(&mut px, Face::UiBold, 11.5 * s, lx + 20.0 * s, ly + 8.0 * s, th.dim, &it.group.to_uppercase());
-                    ly += 30.0 * s;
+                    f.draw(&mut px, Face::UiBold, 11.0 * s, lx + 18.0 * s, ly + 8.0 * s, th.dim, &it.group.to_uppercase());
+                    ly += 28.0 * s;
                 }
-                let r = Rect::new((lx + 8.0 * s) as i32, ly as i32, (lw - 16.0 * s) as i32, (52.0 * s) as i32);
+                let r = Rect::new((lx + 8.0 * s) as i32, ly as i32, (lw - 16.0 * s) as i32, (46.0 * s) as i32);
                 if i == self.ov.sel || is_hover(&hot) {
                     draw::rrect(&mut px, r.x as f32, r.y as f32, r.w as f32, r.h as f32, 10.0 * s, if i == self.ov.sel { th.soft } else { th.text.with_alpha(14) });
                 }
-                draw::rrect(&mut px, r.x as f32 + 12.0 * s, r.y as f32 + 9.0 * s, 34.0 * s, 34.0 * s, 9.0 * s, th.raised);
-                draw::icon(&mut px, it.icon, r.x as f32 + 20.5 * s, r.y as f32 + 17.5 * s, 17.0 * s, th.text, 1.6);
-                let tx = r.x as f32 + 60.0 * s;
-                let maxw = r.w as f32 - 60.0 * s - 100.0 * s;
-                f.draw(&mut px, Face::UiBold, 14.0 * s, tx, r.y as f32 + 8.0 * s, th.text, &f.fit(Face::UiBold, 14.0 * s, &it.title, maxw));
-                f.draw(&mut px, Face::Ui, 12.0 * s, tx, r.y as f32 + 28.0 * s, th.dim, &f.fit(Face::Ui, 12.0 * s, &it.sub, maxw));
+                let app_ic = match &it.act { Act::App(k) => self.ov.apps.get(*k).map(|a| a.icon.clone()), _ => None };
+                let drew = app_ic.is_some_and(|ic| draw::app_icon(&mut px, &ic, r.x as f32 + 12.0 * s, r.y as f32 + 9.0 * s, 28.0 * s));
+                if !drew {
+                    draw::rrect(&mut px, r.x as f32 + 12.0 * s, r.y as f32 + 9.0 * s, 28.0 * s, 28.0 * s, 8.0 * s, th.raised);
+                    draw::icon(&mut px, it.icon, r.x as f32 + 18.0 * s, r.y as f32 + 15.0 * s, 16.0 * s, th.text, 1.6);
+                }
+                let tx = r.x as f32 + 52.0 * s;
+                let maxw = r.w as f32 - 52.0 * s - 90.0 * s;
+                f.draw(&mut px, Face::UiBold, 13.5 * s, tx, r.y as f32 + 6.0 * s, th.text, &f.fit(Face::UiBold, 13.5 * s, &it.title, maxw));
+                f.draw(&mut px, Face::Ui, 11.5 * s, tx, r.y as f32 + 25.0 * s, th.dim, &f.fit(Face::Ui, 11.5 * s, &it.sub, maxw));
                 if i == self.ov.sel {
-                    f.draw_right(&mut px, Face::Ui, 12.0 * s, (r.x + r.w) as f32 - 14.0 * s, r.y as f32 + 18.0 * s, th.dim, "Enter");
+                    f.draw_right(&mut px, Face::Ui, 11.5 * s, (r.x + r.w) as f32 - 12.0 * s, r.y as f32 + 15.0 * s, th.dim, "Enter");
                 }
                 hot.push((at(r), Hot::Item(i)));
-                ly += 52.0 * s;
+                ly += 46.0 * s;
             }
         } else {
-            // pinned apps
-            let pins = self.pinned();
-            let tile = 52.0 * s;
-            let cell = 88.0 * s;
-            let row_w = pins.len() as f32 * cell;
-            let mut ax = cx - row_w / 2.0;
-            let ay = 124.0 * s;
-            for (k, &i) in pins.iter().enumerate() {
+            // every app, pinned first: icons in a grid, or a compact list
+            let order = self.app_order();
+            let pins = self.pinned().len();
+            let icons = self.cfg.look.apps_view != "list";
+            f.draw(&mut px, Face::UiBold, 11.0 * s, apps_r.x as f32 + 4.0 * s, apps_r.y as f32 - 24.0 * s, th.dim, &format!("APPS  ·  {}", order.len()));
+            let (cw, chh) = if icons {
+                (104.0 * s, 98.0 * s)
+            } else {
+                let c = (apps_r.w as f32 / (240.0 * s)).floor().max(1.0);
+                (apps_r.w as f32 / c, 40.0 * s)
+            };
+            let cols = ((apps_r.w as f32 / cw).floor() as usize).max(1);
+            let rows_vis = ((apps_r.h as f32 / chh).floor() as usize).max(1);
+            let total_rows = order.len().div_ceil(cols);
+            let max_scroll = total_rows.saturating_sub(rows_vis);
+            let scroll = self.ov.app_scroll.min(max_scroll);
+            let x0 = apps_r.x as f32 + (apps_r.w as f32 - cols as f32 * cw) / 2.0;
+            for (k, &i) in order.iter().enumerate().skip(scroll * cols).take(rows_vis * cols) {
                 let a = &self.ov.apps[i];
-                let r = Rect::new(ax as i32, ay as i32, cell as i32, (tile + 30.0 * s) as i32);
+                let col = k % cols;
+                let row = k / cols - scroll;
+                let ax = x0 + col as f32 * cw;
+                let ay = apps_r.y as f32 + row as f32 * chh;
                 let sel = self.ov.zone == 1 && self.ov.sel == k;
-                let tx = ax + (cell - tile) / 2.0;
-                draw::rrect(&mut px, tx, ay, tile, tile, 14.0 * s, if sel { th.accent } else if is_hover(&hot) { th.line } else { th.raised });
-                draw::rrect_line(&mut px, tx, ay, tile, tile, 14.0 * s, th.line, 1.0);
-                draw::icon(&mut px, app_icon(a), tx + (tile - 22.0 * s) / 2.0, ay + (tile - 22.0 * s) / 2.0, 22.0 * s, if sel { th.on_accent } else { th.text }, 1.5);
-                let name = f.fit(Face::Ui, 12.0 * s, &a.name, cell - 6.0 * s);
-                f.draw_centered(&mut px, Face::Ui, 12.0 * s, ax + cell / 2.0, ay + tile + 8.0 * s, th.text, &name);
+                let r = Rect::new(ax as i32, ay as i32, cw as i32, (chh - 4.0 * s) as i32);
+                let hv = is_hover(&hot);
+                if sel || hv {
+                    draw::rrect(&mut px, ax + 4.0 * s, ay, cw - 8.0 * s, chh - 6.0 * s, 12.0 * s, if sel { th.soft } else { th.text.with_alpha(14) });
+                }
+                if sel {
+                    draw::rrect_line(&mut px, ax + 4.0 * s, ay, cw - 8.0 * s, chh - 6.0 * s, 12.0 * s, th.accent, 1.5);
+                }
+                if icons {
+                    let isz = 48.0 * s;
+                    let ix = ax + (cw - isz) / 2.0;
+                    let iy = ay + 10.0 * s;
+                    if !draw::app_icon(&mut px, &a.icon, ix, iy, isz) {
+                        draw::rrect(&mut px, ix, iy, isz, isz, 12.0 * s, th.raised);
+                        draw::rrect_line(&mut px, ix, iy, isz, isz, 12.0 * s, th.line, 1.0);
+                        draw::icon(&mut px, app_icon(a), ix + (isz - 22.0 * s) / 2.0, iy + (isz - 22.0 * s) / 2.0, 22.0 * s, th.text, 1.5);
+                    }
+                    let name = f.fit(Face::Ui, 12.0 * s, &a.name, cw - 12.0 * s);
+                    f.draw_centered(&mut px, Face::Ui, 12.0 * s, ax + cw / 2.0, iy + isz + 8.0 * s, th.text, &name);
+                } else {
+                    let isz = 24.0 * s;
+                    let iy = ay + (chh - 6.0 * s - isz) / 2.0;
+                    if !draw::app_icon(&mut px, &a.icon, ax + 12.0 * s, iy, isz) {
+                        draw::icon(&mut px, app_icon(a), ax + 14.0 * s, iy + 2.0 * s, 20.0 * s, th.text, 1.5);
+                    }
+                    let name = f.fit(Face::Ui, 13.0 * s, &a.name, cw - 56.0 * s);
+                    f.draw(&mut px, Face::Ui, 13.0 * s, ax + 46.0 * s, ay + 10.0 * s, th.text, &name);
+                }
+                if k < pins {
+                    // pinned: a small accent dot
+                    draw::circle(&mut px, ax + cw - 16.0 * s, ay + 10.0 * s, 3.0 * s, th.accent);
+                }
                 hot.push((at(r), Hot::App(i)));
-                ax += cell;
             }
-            if self.ov.order.is_empty() {
-                f.draw_centered(&mut px, Face::Ui, 15.0 * s, cx, m.h as f32 / 2.0 - 10.0 * s, th.dim, "No windows open. Pick an app above, or type to find one.");
+            if scroll > 0 {
+                f.draw_right(&mut px, Face::Ui, 11.0 * s, (apps_r.x + apps_r.w) as f32, apps_r.y as f32 - 24.0 * s, th.dim, "▲ scroll for more");
             }
+            if scroll < max_scroll {
+                f.draw_centered(&mut px, Face::Ui, 11.0 * s, cx, (apps_r.y + apps_r.h) as f32 - 4.0 * s, th.dim, "▼ more apps: scroll or use the arrow keys");
+            }
+            cols_drawn = cols;
+            rows_drawn = rows_vis;
+            scroll_drawn = scroll;
         }
 
         // card titles and the selection ring (the cards themselves are the live windows)
@@ -877,12 +1014,15 @@ impl Wm {
                 x0 += cw + 10.0 * s;
             }
         }
-        let hint = if searching { "Enter opens · Ctrl+Enter opens a new window · arrows move · Esc clears" } else { "Type to search · arrows move · Enter opens · Delete closes · Tab: apps · Esc back" };
+        let hint = if searching { "Enter opens · Ctrl+Enter opens a new window · arrows move · Esc clears" } else if self.ov.zone == 1 { "Arrows move · Enter opens · right-click pins · Tab: windows · Esc back" } else { "Arrows move · Enter opens · Delete closes · Tab: apps · type to search · Esc back" };
         f.draw_centered(&mut px, Face::Ui, 12.5 * s, cx, m.h as f32 - 44.0 * s, th.dim, hint);
 
         // the panel
         self.draw_panel(&mut px, &mut hot, m);
         self.ov.hot = hot;
+        self.ov.app_cols = cols_drawn;
+        self.ov.app_rows = rows_drawn;
+        self.ov.app_scroll = scroll_drawn;
         self.comp.set_layer(&self.conn, "overview", &px, m.x, m.y, draw_ease(self.ov.t));
     }
 

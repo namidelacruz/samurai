@@ -25,6 +25,7 @@ const HELP: &str = "samurai — the settings behind the Samurai desktop
   samurai xserver                 which X server runs: X.Org or XLibre
   samurai status                  battery, network, sound, update (JSON)
   samurai update check|install
+  samurai pin APP                 pin an app first in the overview (again: unpin)
   samurai greeter apply           set up the login screen (asks for your password)
   samurai version";
 
@@ -76,6 +77,20 @@ fn main() {
                 Ok(_) => Err("nothing was changed".into()),
                 Err(e) => Err(format!("pkexec: {e}")),
             }
+        }
+        ["pin", app] => {
+            // pin an app first in the overview's list, or unpin it (the overview's right-click)
+            let id = app.trim_end_matches(".desktop").to_string();
+            let mut rows = store::get_list("apps.pinned");
+            let before = rows.len();
+            rows.retain(|r| r["app"].as_str().map(|a| a.trim_end_matches(".desktop")) != Some(id.as_str()));
+            let pinned = rows.len() == before;
+            if pinned {
+                rows.push(serde_json::json!({ "app": id }));
+            }
+            store::set("apps.pinned", serde_json::Value::Array(rows))
+                .and_then(|_| x11::apply().map(|_| ()))
+                .map(|_| format!("{} {id}", if pinned { "pinned" } else { "unpinned" }))
         }
         ["version"] => Ok(format!("samurai {} ({})", env!("CARGO_PKG_VERSION"), option_env!("SAMURAI_COMMIT").unwrap_or("dev"))),
         ["help"] | ["-h"] | ["--help"] | [] => Ok(HELP.into()),

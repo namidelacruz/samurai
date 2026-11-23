@@ -6,9 +6,11 @@ float, snap and tuck away with the same animations everywhere, because the windo
 the screen itself (it is its own compositor, like Hyprland or niri on Wayland). It runs on
 **X.Org** or **XLibre**.
 
-- **Super opens everything.** A tap on Super shows every open window as a card, plus one search
-  line: type to find a window, an app, a setting, or a sum (`= 12*7`), or `>` and a command.
-  Enter opens it. Alt+Tab goes back and forth between windows like you are used to.
+- **Super opens everything.** A tap on Super shows your open windows as cards and, under them,
+  every installed app with its own icon (as a grid, or a compact list: Settings › Look). Click
+  one, or move with the arrow keys and press Enter; right-click an app to pin it first. There is
+  no search bar in the way, but typing still filters at once: windows, apps, settings, a sum
+  (`= 12*7`), or `>` and a command. Alt+Tab goes back and forth between windows as usual.
 - **No taskbar, no workspaces.** A tucked window (`Super+M`) waits on a thin shelf at the
   bottom of the overview. Snap with `Super+arrows`, or drag a window to an edge.
 - **Ink, made once.** The wallpaper is a marbled ink drawing made on your machine from random

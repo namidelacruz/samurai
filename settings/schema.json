@@ -134,6 +134,28 @@
      ]
     },
     {
+     "title": "Overview (Super)",
+     "items": [
+      {
+       "key": "look.apps_view",
+       "label": "Apps in the overview",
+       "type": "enum",
+       "default": "icons",
+       "options": [
+        {
+         "value": "icons",
+         "label": "Icons"
+        },
+        {
+         "value": "list",
+         "label": "List"
+        }
+       ],
+       "help": "Every installed app, under your open windows. Type to filter."
+      }
+     ]
+    },
+    {
      "title": "On the desktop",
      "items": [
       {
@@ -705,7 +727,7 @@
         "app"
        ],
        "example": "firefox",
-       "help": "The row under the search field."
+       "help": "Shown first among the apps in the overview. Right-click an app there to pin or unpin it."
       }
      ]
     }
