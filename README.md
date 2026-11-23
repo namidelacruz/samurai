@@ -143,6 +143,47 @@ a signing key for you. If X does not start afterwards, the login falls back to a
 `samurai-xserver xorg` switches back. Settings › System shows which server runs and has the same
 button.
 
+## If the login screen does not start
+
+**Symptom:** instead of the login screen you get a text login, or a screen ending in
+
+```
+(EE) Cannot open log file "//.local/share/xorg/Xorg.0.log"
+xinit: giving up
+xinit: unable to connect to X server: Connection refused
+```
+
+**Cause:** the login screen runs as greetd's own user, whose home folder is often `/`. X writes
+its log into the home folder and refuses to start when it cannot. Fixed in commit `70f2cc1`;
+installs from before that have the problem.
+
+**Quick fix** (one line, from a console: `Ctrl+Alt+F2`, log in). It replaces only the file that
+starts X, then restarts the login screen. Run it from that second console, because restarting
+greetd closes whatever is running on the login screen's console:
+
+```sh
+sudo curl -fsSL https://raw.githubusercontent.com/namidelacruz/samurai/main/packaging/bin/samurai-x -o /opt/samurai/bin/samurai-x && sudo chmod 755 /opt/samurai/bin/samurai-x && sudo systemctl restart greetd
+```
+
+Without a network, create the folder X is looking for instead (`greeter` is the login screen's
+user; `grep user /etc/greetd/config.toml` shows its name if it differs):
+
+```sh
+sudo install -d -o greeter /.local/share/xorg && sudo systemctl restart greetd
+```
+
+Delete `/.local` again once you have installed the update below.
+
+**Proper fix:** update Samurai, which brings the same fix and everything else:
+
+```sh
+samurai update install
+```
+
+If the login screen still does not appear, its log is the newest `/tmp/samurai-greeter.*.log`
+(`ls -t /tmp/samurai-greeter.*.log | head -1`) and the X server's log is in
+`/run/user/<id>/samurai-xdata/xorg/` (or `/tmp/samurai-xdata-<id>/xorg/`).
+
 ## Keys
 
 | Key | Does |
