@@ -440,6 +440,23 @@
      "title": "Shortcuts",
      "items": [
       {
+       "key": "keys.preset",
+       "label": "Shortcut set",
+       "type": "enum",
+       "default": "samurai",
+       "options": [
+        {
+         "value": "samurai",
+         "label": "Samurai"
+        },
+        {
+         "value": "hyprland",
+         "label": "Hyprland-style"
+        }
+       ],
+       "help": "Hyprland-style: Super+Q terminal, Super+C close, Super+V float, Super+R apps, Super+arrows move focus. Your own lines below still win."
+      },
+      {
        "key": "keys.custom",
        "label": "Your shortcuts",
        "type": "list",

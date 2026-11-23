@@ -38,9 +38,46 @@ pub const ACTIONS: &[(&str, &str)] = &[
     ("reload", "Read the settings again"),
     ("quit", "Log out"),
     ("restart", "Restart the window manager (windows stay open)"),
+    ("focus left", "Focus the window to the left"),
+    ("focus right", "Focus the window to the right"),
+    ("focus up", "Focus the window above"),
+    ("focus down", "Focus the window below"),
+    ("move left", "Move the window left"),
+    ("move right", "Move the window right"),
+    ("move up", "Move the window up"),
+    ("move down", "Move the window down"),
 ];
 
 impl Wm {
+    /// The nearest window in a direction from `w` (by the centres of what is on screen).
+    pub fn neighbour(&self, w: u32, dir: &str) -> Option<u32> {
+        let me = self.client(w).map(|c| self.visible_rect(c))?;
+        let (cx, cy) = (me.x + me.w / 2, me.y + me.h / 2);
+        self.clients.iter().filter(|c| c.win != w && !c.tucked).filter_map(|c| {
+            let r = self.visible_rect(c);
+            let (x, y) = (r.x + r.w / 2, r.y + r.h / 2);
+            let (dx, dy) = (x - cx, y - cy);
+            let ahead = match dir { "left" => dx < 0, "right" => dx > 0, "up" => dy < 0, _ => dy > 0 };
+            // straight ahead counts more than off to the side
+            let (along, across) = if dir == "left" || dir == "right" { (dx.abs(), dy.abs()) } else { (dy.abs(), dx.abs()) };
+            ahead.then_some((c.win, along as i64 + 2 * across as i64))
+        }).min_by_key(|p| p.1).map(|p| p.0)
+    }
+
+    /// Move a window one step in a direction. Floating: to that half of the screen (up fills,
+    /// down puts it back). With tiling on, the tiling code moves it between columns instead.
+    pub fn move_dir(&mut self, w: u32, dir: &str) {
+        if self.tile_move(w, dir) {
+            return;
+        }
+        match dir {
+            "left" => self.snap(w, "left"),
+            "right" => self.snap(w, "right"),
+            "up" => self.toggle_fill(w),
+            _ => self.restore(w),
+        }
+    }
+
     /// Run an action. Returns what to answer on the socket.
     pub fn run(&mut self, action: &str) -> Result<String, String> {
         let words: Vec<&str> = action.split_whitespace().collect();
@@ -71,6 +108,17 @@ impl Wm {
                     self.untuck(w);
                     self.focus(Some(w));
                 }
+            }
+            ["focus", dir @ ("left" | "right" | "up" | "down")] => {
+                let w = need(focused)?;
+                if let Some(t) = self.neighbour(w, dir) {
+                    if self.client(t).is_some_and(|c| c.tucked) { self.untuck(t); }
+                    self.focus(Some(t));
+                }
+            }
+            ["move", dir @ ("left" | "right" | "up" | "down")] => {
+                let w = need(focused)?;
+                self.move_dir(w, dir);
             }
             ["focus", dir] => {
                 let order: Vec<u32> = self.mru.iter().copied().filter(|w| self.client(*w).is_some_and(|c| !c.tucked)).collect();

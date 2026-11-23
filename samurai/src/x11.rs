@@ -201,14 +201,46 @@ pub fn wm_toml() -> String {
         s += &format!("\nautostart = [{}]\n", auto.join(", "));
     }
     s += "\n[keys]\n";
+    // the chosen set first, then your own lines on top (one line per key: TOML allows no repeats)
+    let mut keys: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    if store::get_str("keys.preset") == "hyprland" {
+        for (k, a) in HYPRLAND_KEYS {
+            keys.insert(k.to_string(), a.to_string());
+        }
+    }
     for r in store::get_list("keys.custom") {
         let (k, a) = (r["keys"].as_str().unwrap_or("").trim(), r["action"].as_str().unwrap_or("").trim());
         if !k.is_empty() && !a.is_empty() {
-            s += &format!("{} = {}\n", q(k), q(a));
+            keys.insert(k.to_string(), a.to_string());
         }
+    }
+    for (k, a) in keys {
+        s += &format!("{} = {}\n", q(&k), q(&a));
     }
     s
 }
+
+/// Hyprland's stock shortcuts, as far as Samurai has the same thing (it has no workspaces, so
+/// no workspace keys). Laid over Samurai's own; any key not listed keeps Samurai's meaning.
+pub const HYPRLAND_KEYS: &[(&str, &str)] = &[
+    ("Super+Q", "terminal"),
+    ("Super+C", "close"),
+    ("Super+M", "quit"),
+    ("Super+E", "files"),
+    ("Super+V", "float"),
+    ("Super+R", "overview"),
+    ("Super+F", "fullscreen"),
+    ("Super+H", "tuck"),
+    ("Super+Shift+F", "fill"),
+    ("Super+Left", "focus left"),
+    ("Super+Right", "focus right"),
+    ("Super+Up", "focus up"),
+    ("Super+Down", "focus down"),
+    ("Super+Shift+Left", "move left"),
+    ("Super+Shift+Right", "move right"),
+    ("Super+Shift+Up", "move up"),
+    ("Super+Shift+Down", "move down"),
+];
 
 // ── the terminal ─────────────────────────────────────────────────────────────────────────────
 fn alacritty(p: &Pal, log: &mut Vec<String>) {
@@ -579,6 +611,11 @@ pub fn apply() -> Result<Vec<String>, String> {
 pub fn session_start() -> Result<Vec<String>, String> {
     let mut log = apply()?;
     displays(&mut log);
+    // the first login: a short setup (shortcuts, look, Wi-Fi); skipping it counts as done
+    if !store::config_dir().join("first-setup.done").exists() && have("samurai-settings") {
+        daemon(&["samurai-settings", "--first-setup"]);
+        log.push("first setup opened".into());
+    }
     if !running("xsettingsd") {
         daemon(&["xsettingsd", "-c", &xdg_config().join("xsettingsd/xsettingsd.conf").to_string_lossy()]);
     }
@@ -675,6 +712,13 @@ mod t {
         let s = wm_toml();
         assert!(s.contains("[look]") && s.contains("[keys]") && s.contains("terminal = \"alacritty\""));
         assert!(!s.contains("\"\"\""));
+    }
+    #[test]
+    fn hyprland_set_has_no_repeats() {
+        let mut seen = std::collections::HashSet::new();
+        for (k, _) in HYPRLAND_KEYS {
+            assert!(seen.insert(k.to_lowercase()), "{k} twice");
+        }
     }
     #[test]
     fn quotes_are_escaped() {

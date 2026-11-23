@@ -155,6 +155,11 @@
   "where": "Settings › Keyboard & shortcuts"
  },
  {
+  "label": "Shortcut set",
+  "page": "keyboard",
+  "where": "Settings › Keyboard & shortcuts"
+ },
+ {
   "label": "Your shortcuts",
   "page": "keyboard",
   "where": "Settings › Keyboard & shortcuts"

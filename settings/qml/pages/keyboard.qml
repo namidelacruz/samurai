@@ -9,6 +9,12 @@ ColumnLayout {
     readonly property real s: core.scale
     property var keys: core.shortcuts()
     Connections { target: core; function onChanged() { keys = core.shortcuts() } }
+    RowLayout {
+        Layout.fillWidth: true; spacing: 10 * s
+        Text { Layout.fillWidth: true; wrapMode: Text.Wrap; color: c.dim; font.pixelSize: 12.5 * s
+               text: "Choose between Samurai's shortcuts and Hyprland-style ones, and change any key, in the first setup." }
+        Btn { text: "Open the first setup"; onClicked: core.run("app", ["samurai-settings", "--first-setup"]) }
+    }
     Card {
         title: "Shortcuts now"
         GridLayout {

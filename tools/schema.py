@@ -85,6 +85,8 @@ PAGES = [
       I("kbd.delay", "Repeat starts after", 300, 150, 1000, 25, unit="ms"),
       I("kbd.rate", "Repeats per second", 30, 5, 80, 1)),
     sec("Shortcuts",
+      E("keys.preset", "Shortcut set", "samurai", opts(("samurai", "Samurai"), ("hyprland", "Hyprland-style")),
+        help="Hyprland-style: Super+Q terminal, Super+C close, Super+V float, Super+R apps, Super+arrows move focus. Your own lines below still win."),
       L("keys.custom", "Your shortcuts", ["keys", "action"], "Super+T · spawn alacritty -e htop",
         help="A line here replaces the built-in shortcut on the same keys. Action \"none\" turns a built-in one off.")),
     custom="keyboard"),

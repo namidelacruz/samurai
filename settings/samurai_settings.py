@@ -68,6 +68,40 @@ ICONS = {
 }
 
 
+# ── shortcut sets (the first setup shows and edits these) ─────────────────────────────────────
+# What each set binds for the actions people look for first. Samurai's are the window manager's
+# built-ins; the Hyprland-style set is samurai/src/x11.rs HYPRLAND_KEYS laid over them.
+KEY_ACTIONS = [
+    ("overview", "Open the overview and apps"), ("terminal", "Terminal"), ("close", "Close the window"),
+    ("files", "Files"), ("browser", "Web browser"), ("settings", "Settings"), ("fullscreen", "Full screen"),
+    ("fill", "Fill the screen"), ("float", "Float or tile this window"), ("tuck", "Minimize (tuck away)"),
+    ("taskbar", "Show minimized windows"), ("focus left", "Focus left"), ("focus right", "Focus right"),
+    ("move left", "Move window left"), ("move right", "Move window right"), ("lock", "Lock the screen"),
+    ("quit", "Log out"),
+]
+KEY_SETS = {
+    "samurai": {"overview": "Super", "terminal": "Super+Return", "close": "Super+Q", "files": "Super+E",
+                "browser": "Super+B", "settings": "Super+comma", "fullscreen": "Super+F", "fill": "Super+Up",
+                "float": "Super+V", "tuck": "Super+M", "taskbar": "Super+T", "focus left": "Super+Alt+Left",
+                "focus right": "Super+Alt+Right", "move left": "Super+Left", "move right": "Super+Right",
+                "lock": "Super+L", "quit": "Super+Shift+Escape"},
+    "hyprland": {"overview": "Super+R", "terminal": "Super+Q", "close": "Super+C", "files": "Super+E",
+                 "browser": "Super+B", "settings": "Super+comma", "fullscreen": "Super+F", "fill": "Super+Shift+F",
+                 "float": "Super+V", "tuck": "Super+H", "taskbar": "Super+T", "focus left": "Super+Left",
+                 "focus right": "Super+Right", "move left": "Super+Shift+Left", "move right": "Super+Shift+Right",
+                 "lock": "Super+L", "quit": "Super+M"},
+}
+
+
+def key_norm(k):
+    """'shift+super+q' and 'Super+Shift+Q' are the same keys."""
+    parts = [p.strip().lower() for p in (k or "").split("+") if p.strip()]
+    if not parts:
+        return ""
+    mods = sorted(p for p in parts[:-1])
+    return "+".join(mods + [parts[-1]])
+
+
 def plain_error(text):
     """A network or Bluetooth tool's error, in plain words where the usual ones are known."""
     low = (text or "").lower()
@@ -330,6 +364,53 @@ class Core(QObject):
         rows.sort(key=lambda r: (not r["on"], r["profile"] == "", -r["signal"]))
         return rows
 
+    # ── first setup ────────────────────────────────────────────────────────────────────────
+    @Slot(str, result="QVariant")
+    def keySet(self, name):
+        """The rows of a shortcut set, in the order the first setup shows them."""
+        base = KEY_SETS.get(name, KEY_SETS["samurai"])
+        return [{"action": a, "label": label, "keys": base.get(a, "")} for a, label in KEY_ACTIONS]
+
+    @Slot("QVariant", result="QVariant")
+    def clashes(self, rows):
+        """Keys used for more than one action."""
+        seen, twice = {}, set()
+        for r in rows or []:
+            n = key_norm(r.get("keys", ""))
+            if not n:
+                continue
+            if n in seen:
+                twice.add(n)
+            seen[n] = True
+        return [r["keys"] for r in rows if key_norm(r.get("keys", "")) in twice]
+
+    @Slot(str, "QVariant")
+    def saveKeys(self, preset, rows):
+        """Keep the chosen set, plus the keys you changed in it (and switch off what they replaced)."""
+        base = KEY_SETS.get(preset, KEY_SETS["samurai"])
+        custom = [r for r in self._values.get("keys.custom", []) if isinstance(r, dict)]
+        for r in rows or []:
+            a, k = r.get("action", ""), (r.get("keys") or "").strip()
+            old = base.get(a, "")
+            if not k or key_norm(k) == key_norm(old):
+                continue
+            custom = [c for c in custom if key_norm(c.get("keys", "")) not in (key_norm(k), key_norm(old))]
+            custom.append({"keys": k, "action": a})
+            if old:
+                custom.append({"keys": old, "action": "none"})
+        self.set("keys.preset", preset)
+        self.set("keys.custom", custom)
+
+    @Slot()
+    def finishSetup(self):
+        try:
+            d = config_dir()
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "first-setup.done").write_text("done\n")
+        except OSError:
+            pass
+        QTimer.singleShot(600, QGuiApplication.quit)  # let the last settings be written
+
     @Slot(result="QVariant")
     def bluetooth(self):
         """Bluetooth: on or off, and the paired devices (connected first)."""
@@ -423,7 +504,8 @@ def main():
     core = Core(page)
     eng = QQmlApplicationEngine()
     eng.rootContext().setContextProperty("core", core)
-    eng.load(QUrl.fromLocalFile(str(HERE / "qml" / "Main.qml")))
+    first = "--first-setup" in sys.argv
+    eng.load(QUrl.fromLocalFile(str(HERE / "qml" / ("FirstSetup.qml" if first else "Main.qml"))))
     if not eng.rootObjects():
         sys.exit(1)
     code = app.exec()

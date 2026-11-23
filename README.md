@@ -288,24 +288,31 @@ rfkill list
 
 ## Keys
 
-| Key | Does |
-| --- | --- |
-| `Super` (tap) | Overview and search |
-| `Alt+Tab` / `Alt+Shift+Tab` | Next / previous window |
-| `Super+Return` / `Super+E` / `Super+B` / `Super+,` | Terminal / files / browser / Settings |
-| `Super+Q` | Close the window |
-| `Super+Up` / `Super+Down` | Fill the screen / back (or tuck away) |
-| `Super+Left` / `Super+Right` | Left / right half |
-| `Super+Shift+arrows` | Quarters |
-| `Super+C` | Centre |
-| `Super+F` | Full screen |
-| `Super+M` / `Super+Shift+M` | Tuck away / bring back |
-| `Super+L` | Lock |
-| `Super+Shift+B` | Night / paper |
-| `Super+Shift+S`, `Print`, `Alt+Print` | Screenshot of an area / the screen / the window |
-| `Super+Shift+Escape` | Log out |
+At the first login a short setup asks which shortcuts you want: **Samurai's** or
+**Hyprland-style**, and lets you change any key there (a key given to two actions is pointed out
+before you go on). It also asks night or paper, the size of everything, icons or a list for the
+apps, and offers Wi-Fi. Skip it if you like; Settings › Keyboard opens it again.
 
-All of them can be changed in Settings › Keyboard.
+| Action | Samurai | Hyprland-style |
+| --- | --- | --- |
+| Overview and apps | `Super` (tap) | `Super+R` (a tap on Super works too) |
+| Terminal | `Super+Return` | `Super+Q` |
+| Close the window | `Super+Q` | `Super+C` |
+| Files / browser / Settings | `Super+E` / `Super+B` / `Super+,` | the same |
+| Full screen / fill the screen | `Super+F` / `Super+Up` | `Super+F` / `Super+Shift+F` |
+| Float or tile this window | `Super+V` | `Super+V` |
+| Minimize (tuck away) / bring back | `Super+M` / `Super+Shift+M` | `Super+H` / `Super+Shift+M` |
+| Show minimized windows | `Super+T` | `Super+T` |
+| Move the window left / right | `Super+Left` / `Super+Right` | `Super+Shift+Left` / `Super+Shift+Right` |
+| Focus the window left / right / up / down | `Super+Alt+arrows` | `Super+arrows` |
+| Quarters (floating) | `Super+Shift+arrows` | (moves the window instead) |
+| Next / previous window | `Alt+Tab` / `Alt+Shift+Tab` | the same |
+| Lock / log out | `Super+L` / `Super+Shift+Escape` | `Super+L` / `Super+M` |
+| Night / paper | `Super+Shift+B` | the same |
+| Screenshot of an area / the screen / the window | `Super+Shift+S`, `Print`, `Alt+Print` | the same |
+
+With windows floating, moving left or right puts the window on that half of the screen. Your own
+lines in Settings › Keyboard always win over either set.
 
 ## Commands
 

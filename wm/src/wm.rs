@@ -1688,3 +1688,10 @@ fn save_places(p: &HashMap<String, Rect>) {
     std::fs::create_dir_all(&dir).ok();
     std::fs::write(dir.join("places.json"), serde_json::Value::Object(o).to_string()).ok();
 }
+
+impl Wm {
+    /// Tiling moves a window between columns; until tiling is on this does nothing (false).
+    pub fn tile_move(&mut self, _w: Window, _dir: &str) -> bool {
+        false
+    }
+}
