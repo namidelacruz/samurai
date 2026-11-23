@@ -184,6 +184,76 @@ If the login screen still does not appear, its log is the newest `/tmp/samurai-g
 (`ls -t /tmp/samurai-greeter.*.log | head -1`) and the X server's log is in
 `/run/user/<id>/samurai-xdata/xorg/` (or `/tmp/samurai-xdata-<id>/xorg/`).
 
+## If the login screen is too small or too big
+
+The login screen runs before anyone has logged in, so it cannot read your own size setting while
+it runs. Instead it uses a copy, `"scale"` in `/etc/samurai/greeter.json`, made when the login
+screen was set up. On a high-resolution screen it can therefore come up tiny, or stay at an old
+size after you change Settings › Look › Size.
+
+**Fix:** set your size in Settings › Look › Size first, then copy it to the login screen (asks for
+your password):
+
+```sh
+samurai greeter apply
+```
+
+Or set it directly, for example 1.5 for a 150 % screen (any value from 1 to 2.5):
+
+```sh
+sudo sed -i 's/"scale": *[0-9.]*/"scale": 1.5/' /etc/samurai/greeter.json
+```
+
+Either way the new size shows the next time the login screen starts (log out, or
+`sudo systemctl restart greetd` from a second console).
+
+## If Wi-Fi or the network does not work
+
+Samurai's Wi-Fi settings and the campus fixes go through NetworkManager. Run these from a console
+or a terminal; the first shows what is wrong:
+
+```sh
+systemctl is-enabled NetworkManager; systemctl is-active NetworkManager
+nmcli general status; nmcli device status
+rfkill list
+```
+
+- **NetworkManager is not running** (`disabled` / `inactive`). The installer only turns it on when
+  nothing else manages the network, so if archinstall set up `iwd`, `systemd-networkd` or `dhcpcd`
+  it was left off. Two network managers at once fight over the Wi-Fi, so switch the others off and
+  NetworkManager on, in one line. Do this at the machine itself, not over SSH: the network
+  drops for a moment.
+
+  ```sh
+  sudo systemctl disable --now iwd systemd-networkd dhcpcd 2>/dev/null; sudo systemctl enable --now NetworkManager
+  ```
+
+- **Wi-Fi is switched off** (`rfkill` says `Soft blocked: yes`, or `nmcli` says the radio is
+  disabled):
+
+  ```sh
+  rfkill unblock wifi; nmcli radio wifi on
+  ```
+
+  `Hard blocked: yes` is a hardware switch or a key on the keyboard (often `Fn` plus an aerial
+  symbol); no command changes that.
+
+- **The Wi-Fi card shows as `unmanaged`** in `nmcli device status`: something in
+  `/etc/NetworkManager/conf.d/` tells NetworkManager to leave it alone. Look there for an
+  `unmanaged-devices=` line, remove it, then `sudo systemctl restart NetworkManager`.
+
+- **UC-Secure / AirUC-Secure or eduroam stops connecting** (often after a system update): Settings
+  › Network › Repair this connection, or from a terminal:
+
+  ```sh
+  shadow wifi repair
+  shadow wifi log      # what the last attempt said, in plain words
+  shadow wifi device   # is the Wi-Fi card there, with its firmware and driver
+  ```
+
+- **A saved network keeps failing:** forget it and join again (Settings › Network, or
+  `nmcli connection delete "NAME"`).
+
 ## Keys
 
 | Key | Does |
