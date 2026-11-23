@@ -3,6 +3,7 @@
 //! whole of Samurai's "shell": there is no taskbar and there are no workspaces.
 
 use crate::draw::{self, Face};
+use crate::theme::Rgba;
 use crate::status::{self, Snapshot};
 use crate::wm::{Rect, Wm};
 use crate::x;
@@ -52,6 +53,14 @@ pub enum Hot {
     Power(&'static str),
     Shelf(Window),
     Settings,
+    /// a row that opens or closes its list ("wifi", "bt")
+    Expand(&'static str),
+    Net(usize),
+    Bt(usize),
+    PassField,
+    PassGo,
+    /// the footer of an open list: its Settings page
+    ListSettings(&'static str),
     Blank,
 }
 
@@ -76,7 +85,17 @@ pub struct Overview {
     pub snap: Snapshot,
     pub drag_slider: Option<&'static str>,
     pub zone: u8,
+    /// the open list in the quick panel: "wifi" or "bt"
+    pub expand: Option<&'static str>,
+    /// a network waiting for its password, and what has been typed (never drawn, only dots)
+    pub pass_for: Option<String>,
+    pub pass: String,
+    /// what the last network or Bluetooth action said
+    pub note: Option<(String, bool)>,
 }
+
+/// The quick panel's width: compact, but wide enough for a network name.
+pub const PANEL_W: f32 = 284.0;
 
 fn data_dirs() -> Vec<std::path::PathBuf> {
     let mut v = vec![];
@@ -486,6 +505,24 @@ impl Wm {
             return;
         }
         let searching = !self.ov.query.is_empty();
+        if self.ov.pass_for.is_some() {
+            // typing goes to the password field until it is sent or given up
+            match sym {
+                x::KS_ESCAPE => { self.ov.pass_for = None; self.ov.pass.clear(); }
+                x::KS_RETURN | x::KS_KP_ENTER => self.send_password(),
+                x::KS_BACKSPACE => { self.ov.pass.pop(); }
+                x::KS_SUPER_L | x::KS_SUPER_R => { self.super_down = true; self.super_used = false; return; }
+                _ => {
+                    if state & (x::MOD_CTRL | x::MOD_ALT | x::MOD_SUPER) == 0 {
+                        if let Some(ch) = self.keymap.char_for(code, state) {
+                            if !ch.is_control() && self.ov.pass.chars().count() < 128 { self.ov.pass.push(ch); }
+                        }
+                    }
+                }
+            }
+            self.ov.dirty = true;
+            return;
+        }
         match sym {
             x::KS_SUPER_L | x::KS_SUPER_R => {
                 self.super_down = true;
@@ -568,6 +605,30 @@ impl Wm {
             (Some(Hot::Tile(t)), _) => self.activate(Act::Tile(t)),
             (Some(Hot::Power(p)), _) => self.activate(Act::Power(p)),
             (Some(Hot::Settings), _) => self.activate(Act::Settings),
+            (Some(Hot::Expand(what)), _) => {
+                self.ov.expand = if self.ov.expand == Some(what) { None } else { Some(what) };
+                self.ov.pass_for = None;
+                self.ov.pass.clear();
+                self.ov.note = None;
+                self.status.detail.store(self.ov.expand.is_some(), std::sync::atomic::Ordering::Relaxed);
+                self.status.refresh();
+                self.ov.dirty = true;
+            }
+            (Some(Hot::Net(i)), _) => self.pick_network(i),
+            (Some(Hot::Bt(i)), _) => {
+                if let Some(d) = self.ov.snap.bt_devs.get(i).cloned() {
+                    let verb = if d.connected { "disconnect" } else { "connect" };
+                    let done = if d.connected { format!("{} disconnected", d.name) } else { format!("{} connected", d.name) };
+                    self.status.job(vec!["bluetoothctl".into(), verb.into(), d.mac.clone()], None, done);
+                    self.ov.dirty = true;
+                }
+            }
+            (Some(Hot::PassGo), _) => self.send_password(),
+            (Some(Hot::PassField), _) => {}
+            (Some(Hot::ListSettings(page)), _) => {
+                status::spawn(&format!("{} --page {}", self.cfg.apps.settings, page));
+                self.overview_close(None);
+            }
             (Some(Hot::Shelf(w)), _) => {
                 self.untuck(w);
                 self.overview_close(Some(w));
@@ -584,6 +645,38 @@ impl Wm {
             }
             _ => self.overview_close(None),
         }
+    }
+
+    /// A network was picked in the panel: leave it, join it, or ask for its password.
+    fn pick_network(&mut self, i: usize) {
+        let Some(n) = self.ov.snap.nets.get(i).cloned() else { return };
+        self.ov.pass_for = None;
+        self.ov.pass.clear();
+        if n.active {
+            let id = if n.profile.is_empty() { n.ssid.clone() } else { n.profile.clone() };
+            self.status.job(vec!["nmcli".into(), "connection".into(), "down".into(), "id".into(), id], None, format!("Left {}", n.ssid));
+        } else if n.secure && !n.known {
+            if n.ssid.to_lowercase().contains("uc-secure") || n.ssid.to_lowercase().contains("eduroam") {
+                // campus networks need a sign-in and a certificate: Settings sets them up properly
+                status::spawn(&format!("{} --page network", self.cfg.apps.settings));
+                self.overview_close(None);
+                return;
+            }
+            self.ov.pass_for = Some(n.ssid.clone());
+            self.ov.note = None;
+        } else {
+            self.status.job(status::join_args(&n, None), None, format!("Connected to {}", n.ssid));
+        }
+        self.ov.dirty = true;
+    }
+
+    fn send_password(&mut self) {
+        let Some(ssid) = self.ov.pass_for.take() else { return };
+        let pw = std::mem::take(&mut self.ov.pass);
+        if let Some(n) = self.ov.snap.nets.iter().find(|n| n.ssid == ssid).cloned() {
+            self.status.job(status::join_args(&n, Some(&pw)), Some(pw), format!("Connected to {}", n.ssid));
+        }
+        self.ov.dirty = true;
     }
 
     fn slide(&mut self, name: &str, r: Rect, x: i32) {
@@ -630,6 +723,10 @@ impl Wm {
             self.ov.snap = s;
             self.ov.dirty = true;
         }
+        if let Some(n) = self.status.take_note() {
+            self.ov.note = Some(n);
+            self.ov.dirty = true;
+        }
         if self.ov.closing && p >= 1.0 {
             self.ov.open = false;
             self.ov.closing = false;
@@ -655,7 +752,7 @@ impl Wm {
         let mut hot: Vec<(Rect, Hot)> = vec![];
         let f = &self.fonts;
         let pad = 40.0 * s;
-        let panel_w = 324.0 * s;
+        let panel_w = PANEL_W * s;
         let zone_w = m.w as f32 - panel_w - 3.0 * pad;
         let cx = pad + zone_w / 2.0;
         let searching = !self.ov.query.is_empty();
@@ -789,88 +886,212 @@ impl Wm {
         self.comp.set_layer(&self.conn, "overview", &px, m.x, m.y, draw_ease(self.ov.t));
     }
 
+    /// The quick panel, compact: the time, six small toggle tiles, a row each for Wi-Fi and
+    /// Bluetooth that opens into a short list, two slim sliders, the battery, and the power row.
+    /// Its height follows what it holds.
     fn draw_panel(&self, px: &mut draw::Px, hot: &mut Vec<(Rect, Hot)>, m: Rect) {
         let th = &self.theme;
         let f = &self.fonts;
         let s = self.scale;
         let sn = &self.ov.snap;
-        let pw = 324.0 * s;
+        let pw = PANEL_W * s;
+        let pad = 16.0 * s;
         let (x, y) = (m.w as f32 - pw - 40.0 * s, 40.0 * s);
-        let h = m.h as f32 - 80.0 * s;
         let at = |r: Rect| Rect::new(r.x + m.x, r.y + m.y, r.w, r.h);
         let hov = |hot: &Vec<(Rect, Hot)>| self.ov.hover == Some(hot.len());
+        let ix = x + pad;
+        let iw = pw - 2.0 * pad;
+        let tile_h = 44.0 * s;
+        let row_h = 34.0 * s;
+        let item_h = 30.0 * s;
+        let gap = 6.0 * s;
+
+        // the height first, from the same measures used below
+        let list_rows = match self.ov.expand {
+            Some("wifi") => sn.nets.len().max(1),
+            Some("bt") => sn.bt_devs.len().max(1),
+            _ => 0,
+        };
+        let mut h = pad + 30.0 * s + 18.0 * s + 12.0 * s;           // time, date
+        h += 2.0 * tile_h + gap + 10.0 * s;                          // tiles
+        h += 2.0 * (row_h + 4.0 * s);                                // Wi-Fi, Bluetooth rows
+        if list_rows > 0 {
+            h += list_rows as f32 * item_h + item_h + 8.0 * s;       // list + its footer
+            if self.ov.pass_for.is_some() { h += 40.0 * s; }
+        }
+        if self.ov.note.is_some() { h += 22.0 * s; }
+        h += 8.0 * s + 2.0 * 30.0 * s;                               // sliders
+        if sn.battery.is_some() { h += 26.0 * s; }
+        h += 10.0 * s + 36.0 * s + gap + 36.0 * s + pad;             // power row, settings
+        let h = h.min(m.h as f32 - 80.0 * s);
         draw::rrect(px, x, y, pw, h, 14.0 * s, th.glass);
         draw::rrect_line(px, x, y, pw, h, 14.0 * s, th.line, 1.0);
         hot.push((at(Rect::new(x as i32, y as i32, pw as i32, h as i32)), Hot::Blank));
-        let ix = x + 24.0 * s;
-        let iw = pw - 48.0 * s;
+
+        let mut cy = y + pad;
         let now = local_time();
-        f.draw(px, Face::UiBold, 52.0 * s, ix, y + 20.0 * s, th.text, &format!("{:02}:{:02}", now.0, now.1));
-        f.draw(px, Face::Ui, 14.0 * s, ix, y + 92.0 * s, th.dim, &now.2);
-        // tiles
-        let tiles: [(&str, &str, &str, String, bool); 6] = [
-            ("wifi", if sn.wifi_on { "wifi" } else { "wifi-off" }, "Wi-Fi", if !sn.wifi_on { "Off".into() } else { sn.ssid.clone().unwrap_or_else(|| "Not connected".into()) }, sn.wifi_on),
-            ("bt", "bt", "Bluetooth", if sn.bt_on { "On".into() } else { "Off".into() }, sn.bt_on),
-            ("quiet", "quiet", "Quiet", if sn.quiet { "Notices held".into() } else { "Off".into() }, sn.quiet),
-            ("night", "sun", "Night light", if sn.night_light { "On".into() } else { "Off".into() }, sn.night_light),
-            ("ground", if th.night { "moon" } else { "sun" }, if th.night { "Night" } else { "Paper" }, "Switch ground".into(), false),
-            ("shot", "camera", "Screenshot", "An area".into(), false),
+        let w = f.draw(px, Face::UiBold, 26.0 * s, ix, cy, th.text, &format!("{:02}:{:02}", now.0, now.1));
+        f.draw(px, Face::Ui, 12.5 * s, ix + w + 10.0 * s, cy + 11.0 * s, th.dim, &now.2);
+        cy += 30.0 * s + 18.0 * s;
+
+        // tiles: icon and one word; the state is the fill
+        let tiles: [(&str, &str, &str, bool); 6] = [
+            ("wifi", if sn.wifi_on { "wifi" } else { "wifi-off" }, "Wi-Fi", sn.wifi_on),
+            ("bt", "bt", "Bluetooth", sn.bt_on),
+            ("quiet", "quiet", "Quiet", sn.quiet),
+            ("night", "sun", "Night light", sn.night_light),
+            ("ground", if th.night { "moon" } else { "sun" }, if th.night { "Night" } else { "Paper" }, false),
+            ("shot", "camera", "Screenshot", false),
         ];
-        let tw = (iw - 10.0 * s) / 2.0;
-        let th_ = 64.0 * s;
-        for (i, (key, ic, name, sub, on)) in tiles.iter().enumerate() {
-            let tx = ix + (i % 2) as f32 * (tw + 10.0 * s);
-            let ty = y + 130.0 * s + (i / 2) as f32 * (th_ + 10.0 * s);
-            let r = Rect::new(tx as i32, ty as i32, tw as i32, th_ as i32);
+        let tw = (iw - 2.0 * gap) / 3.0;
+        for (i, (key, ic, name, on)) in tiles.iter().enumerate() {
+            let tx = ix + (i % 3) as f32 * (tw + gap);
+            let ty = cy + (i / 3) as f32 * (tile_h + gap);
+            let r = Rect::new(tx as i32, ty as i32, tw as i32, tile_h as i32);
             let (bg, fg) = if *on { (th.accent, th.on_accent) } else if hov(hot) { (th.line, th.text) } else { (th.raised, th.text) };
-            draw::rrect(px, tx, ty, tw, th_, 12.0 * s, bg);
-            if !on { draw::rrect_line(px, tx, ty, tw, th_, 12.0 * s, th.line, 1.0); }
-            draw::icon(px, ic, tx + 12.0 * s, ty + (th_ - 18.0 * s) / 2.0, 18.0 * s, fg, 1.6);
-            f.draw(px, Face::UiBold, 13.0 * s, tx + 40.0 * s, ty + 13.0 * s, fg, name);
-            f.draw(px, Face::Ui, 11.5 * s, tx + 40.0 * s, ty + 33.0 * s, fg.with_alpha(220), &f.fit(Face::Ui, 11.5 * s, sub, tw - 48.0 * s));
+            draw::rrect(px, tx, ty, tw, tile_h, 10.0 * s, bg);
+            if !on { draw::rrect_line(px, tx, ty, tw, tile_h, 10.0 * s, th.line, 1.0); }
+            draw::icon(px, ic, tx + (tw - 16.0 * s) / 2.0, ty + 6.0 * s, 16.0 * s, fg, 1.6);
+            let label = f.fit(Face::Ui, 10.5 * s, name, tw - 6.0 * s);
+            f.draw_centered(px, Face::Ui, 10.5 * s, tx + tw / 2.0, ty + 25.0 * s, fg, &label);
             hot.push((at(r), Hot::Tile(key)));
         }
-        // sliders
-        let mut sy = y + 130.0 * s + 3.0 * (th_ + 10.0 * s) + 14.0 * s;
+        cy += 2.0 * tile_h + gap + 10.0 * s;
+
+        // Wi-Fi and Bluetooth rows, each opening its list
+        let wifi_sub = if !sn.have_nm { "NetworkManager is not running".to_string() } else if !sn.wifi_on { "Off".into() } else if sn.wired && sn.ssid.is_none() { "Wired".into() } else { sn.ssid.clone().unwrap_or_else(|| "Not connected".into()) };
+        let bt_sub = if !sn.have_bt { "Not installed".to_string() } else if !sn.bt_on { "Off".into() } else { sn.bt_devs.iter().find(|d| d.connected).map(|d| d.name.clone()).unwrap_or_else(|| "On".into()) };
+        for (key, ic, name, sub) in [("wifi", "wifi", "Wi-Fi", wifi_sub), ("bt", "bt", "Bluetooth", bt_sub)] {
+            let open = self.ov.expand == Some(key);
+            let r = Rect::new(ix as i32, cy as i32, iw as i32, row_h as i32);
+            if open || hov(hot) {
+                draw::rrect(px, ix, cy, iw, row_h, 8.0 * s, if open { th.soft } else { th.text.with_alpha(14) });
+            }
+            draw::icon(px, ic, ix + 8.0 * s, cy + (row_h - 15.0 * s) / 2.0, 15.0 * s, th.dim, 1.6);
+            let nw = f.draw(px, Face::UiBold, 12.5 * s, ix + 32.0 * s, cy + 9.0 * s, th.text, name);
+            let room = iw - 32.0 * s - nw - 10.0 * s - 26.0 * s;
+            f.draw_right(px, Face::Ui, 12.0 * s, ix + iw - 26.0 * s, cy + 9.5 * s, th.dim, &f.fit(Face::Ui, 12.0 * s, &sub, room));
+            draw::icon(px, if open { "chev-down" } else { "chev" }, ix + iw - 21.0 * s, cy + (row_h - 14.0 * s) / 2.0, 14.0 * s, th.dim, 1.6);
+            hot.push((at(r), Hot::Expand(key)));
+            cy += row_h + 4.0 * s;
+            if !open { continue; }
+            // the list, right under its row
+            let lx = ix + 8.0 * s;
+            let lw = iw - 8.0 * s;
+            if key == "wifi" {
+                if sn.nets.is_empty() {
+                    f.draw(px, Face::Ui, 12.0 * s, lx + 24.0 * s, cy + 8.0 * s, th.dim, if sn.wifi_on { "Looking for networks…" } else { "Wi-Fi is off" });
+                    cy += item_h;
+                }
+                for (i, n) in sn.nets.iter().enumerate() {
+                    let r = Rect::new(lx as i32, cy as i32, lw as i32, item_h as i32);
+                    if hov(hot) { draw::rrect(px, lx, cy, lw, item_h, 7.0 * s, th.text.with_alpha(14)); }
+                    // signal: three bars
+                    for b in 0..3 {
+                        let lit = n.signal as u32 >= [1u32, 40, 70][b];
+                        let bh = (4.0 + 3.0 * b as f32) * s;
+                        draw::rrect(px, lx + 6.0 * s + b as f32 * 4.0 * s, cy + 20.0 * s - bh, 2.6 * s, bh, 1.0, if lit { th.text } else { th.line });
+                    }
+                    let face = if n.active { Face::UiBold } else { Face::Ui };
+                    let right = if n.active { "Connected" } else if n.known { "Saved" } else { "" };
+                    let rw = if right.is_empty() { 0.0 } else { f.measure(Face::Ui, 11.0 * s, right) + 8.0 * s };
+                    let lock = if n.secure { 16.0 * s } else { 0.0 };
+                    let name = f.fit(face, 12.5 * s, &n.ssid, lw - 26.0 * s - rw - lock - 6.0 * s);
+                    let nw = f.draw(px, face, 12.5 * s, lx + 24.0 * s, cy + 8.0 * s, if n.active { th.accent } else { th.text }, &name);
+                    if n.secure { draw::icon(px, "lock", lx + 28.0 * s + nw, cy + 9.0 * s, 11.0 * s, th.dim, 1.6); }
+                    if !right.is_empty() { f.draw_right(px, Face::Ui, 11.0 * s, lx + lw - 4.0 * s, cy + 9.0 * s, th.dim, right); }
+                    hot.push((at(r), Hot::Net(i)));
+                    cy += item_h;
+                    if self.ov.pass_for.as_deref() == Some(n.ssid.as_str()) {
+                        // the password field, inline: dots only, never the text
+                        let fw = lw - 60.0 * s;
+                        let fr = Rect::new(lx as i32, (cy + 2.0 * s) as i32, fw as i32, (32.0 * s) as i32);
+                        draw::rrect(px, lx, cy + 2.0 * s, fw, 32.0 * s, 8.0 * s, th.raised);
+                        draw::rrect_line(px, lx, cy + 2.0 * s, fw, 32.0 * s, 8.0 * s, th.accent, 1.2);
+                        let dots: String = "•".repeat(self.ov.pass.chars().count().min(24));
+                        if dots.is_empty() {
+                            f.draw(px, Face::Ui, 12.0 * s, lx + 10.0 * s, cy + 10.0 * s, th.dim, "Password");
+                        } else {
+                            f.draw(px, Face::Ui, 12.5 * s, lx + 10.0 * s, cy + 10.0 * s, th.text, &dots);
+                        }
+                        hot.push((at(fr), Hot::PassField));
+                        let gr = Rect::new((lx + fw + 6.0 * s) as i32, (cy + 2.0 * s) as i32, (54.0 * s) as i32, (32.0 * s) as i32);
+                        draw::rrect(px, gr.x as f32, gr.y as f32, gr.w as f32, gr.h as f32, 8.0 * s, th.accent);
+                        f.draw_centered(px, Face::UiBold, 12.0 * s, gr.x as f32 + gr.w as f32 / 2.0, cy + 10.0 * s, th.on_accent, "Join");
+                        hot.push((at(gr), Hot::PassGo));
+                        cy += 40.0 * s;
+                    }
+                }
+            } else {
+                if sn.bt_devs.is_empty() {
+                    f.draw(px, Face::Ui, 12.0 * s, lx + 24.0 * s, cy + 8.0 * s, th.dim, if sn.bt_on { "No paired devices" } else { "Bluetooth is off" });
+                    cy += item_h;
+                }
+                for (i, d) in sn.bt_devs.iter().enumerate() {
+                    let r = Rect::new(lx as i32, cy as i32, lw as i32, item_h as i32);
+                    if hov(hot) { draw::rrect(px, lx, cy, lw, item_h, 7.0 * s, th.text.with_alpha(14)); }
+                    draw::circle(px, lx + 10.0 * s, cy + item_h / 2.0, 3.5 * s, if d.connected { th.accent } else { th.line });
+                    let right = if d.connected { "Connected" } else { "Connect" };
+                    let rw = f.measure(Face::Ui, 11.0 * s, right) + 8.0 * s;
+                    f.draw(px, if d.connected { Face::UiBold } else { Face::Ui }, 12.5 * s, lx + 24.0 * s, cy + 8.0 * s, th.text, &f.fit(Face::Ui, 12.5 * s, &d.name, lw - 30.0 * s - rw));
+                    f.draw_right(px, Face::Ui, 11.0 * s, lx + lw - 4.0 * s, cy + 9.0 * s, th.dim, right);
+                    hot.push((at(r), Hot::Bt(i)));
+                    cy += item_h;
+                }
+            }
+            let page = if key == "wifi" { "network" } else { "network" };
+            let r = Rect::new(lx as i32, cy as i32, lw as i32, item_h as i32);
+            f.draw(px, Face::Ui, 12.0 * s, lx + 24.0 * s, cy + 8.0 * s, if hov(hot) { th.text } else { th.accent }, if key == "wifi" { "Network settings…" } else { "Bluetooth settings…" });
+            hot.push((at(r), Hot::ListSettings(page)));
+            cy += item_h + 8.0 * s;
+        }
+        if let Some((text, bad)) = &self.ov.note {
+            let t = f.fit(Face::Ui, 11.5 * s, text, iw - 8.0 * s);
+            f.draw(px, Face::Ui, 11.5 * s, ix + 4.0 * s, cy + 2.0 * s, if *bad { Rgba(220, 90, 70, 255) } else { th.dim }, &t);
+            cy += 22.0 * s;
+        }
+
+        // sliders, slim
+        cy += 8.0 * s;
         for (key, ic, val) in [("volume", if sn.muted { "mute" } else { "sound" }, sn.volume), ("brightness", "bright", sn.brightness)] {
-            draw::icon(px, ic, ix, sy, 18.0 * s, th.dim, 1.6);
-            let (tx, tw2) = (ix + 30.0 * s, iw - 30.0 * s - 40.0 * s);
+            draw::icon(px, ic, ix, cy + 3.0 * s, 15.0 * s, th.dim, 1.6);
+            let (tx, tw2) = (ix + 26.0 * s, iw - 26.0 * s - 34.0 * s);
             let v = val.unwrap_or(0).min(100) as f32 / 100.0;
-            draw::rrect(px, tx, sy + 6.0 * s, tw2, 6.0 * s, 3.0 * s, th.line);
-            draw::rrect(px, tx, sy + 6.0 * s, tw2 * v, 6.0 * s, 3.0 * s, if val.is_some() { th.accent } else { th.line });
-            draw::circle(px, tx + tw2 * v, sy + 9.0 * s, 8.0 * s, th.raised);
-            draw::circle(px, tx + tw2 * v, sy + 9.0 * s, 7.0 * s, if val.is_some() { th.accent } else { th.dim });
-            f.draw_right(px, Face::Ui, 12.5 * s, ix + iw, sy + 1.0 * s, th.text, &val.map(|v| v.to_string()).unwrap_or_else(|| "—".into()));
-            let r = Rect::new((tx - 8.0 * s) as i32, (sy - 6.0 * s) as i32, (tw2 + 16.0 * s) as i32, (30.0 * s) as i32);
-            hot.push((at(Rect::new(tx as i32 + m.x - m.x, r.y, tw2 as i32, r.h)), Hot::Slider(key, at(Rect::new(tx as i32, r.y, tw2 as i32, r.h)))));
-            sy += 40.0 * s;
+            draw::rrect(px, tx, cy + 8.0 * s, tw2, 4.0 * s, 2.0 * s, th.line);
+            draw::rrect(px, tx, cy + 8.0 * s, tw2 * v, 4.0 * s, 2.0 * s, if val.is_some() { th.accent } else { th.line });
+            draw::circle(px, tx + tw2 * v, cy + 10.0 * s, 6.5 * s, th.raised);
+            draw::circle(px, tx + tw2 * v, cy + 10.0 * s, 5.5 * s, if val.is_some() { th.accent } else { th.dim });
+            f.draw_right(px, Face::Ui, 11.5 * s, ix + iw, cy + 3.0 * s, th.text, &val.map(|v| v.to_string()).unwrap_or_else(|| "—".into()));
+            let r = Rect::new((tx - 8.0 * s) as i32, (cy - 4.0 * s) as i32, (tw2 + 16.0 * s) as i32, (28.0 * s) as i32);
+            hot.push((at(Rect::new(tx as i32, r.y, tw2 as i32, r.h)), Hot::Slider(key, at(Rect::new(tx as i32, r.y, tw2 as i32, r.h)))));
+            cy += 30.0 * s;
         }
-        // battery
         if let Some((pct, charging)) = sn.battery {
-            draw::icon(px, "battery", ix, sy + 4.0 * s, 20.0 * s, th.dim, 1.6);
-            let fill_w = 10.5 * s * pct as f32 / 100.0;
-            draw::rrect(px, ix + 4.5 * s * 20.0 / 24.0, sy + 4.0 * s + 9.5 * s * 20.0 / 24.0, fill_w * 20.0 / 24.0, 5.0 * s * 20.0 / 24.0, 1.0, th.dim);
-            let w = f.draw(px, Face::UiBold, 13.0 * s, ix + 30.0 * s, sy + 5.0 * s, th.text, &format!("{pct}%"));
-            f.draw(px, Face::Ui, 13.0 * s, ix + 38.0 * s + w, sy + 5.0 * s, th.dim, if charging { "charging" } else { "on battery" });
+            draw::icon(px, "battery", ix, cy + 3.0 * s, 15.0 * s, th.dim, 1.6);
+            let w = f.draw(px, Face::UiBold, 12.0 * s, ix + 26.0 * s, cy + 3.0 * s, th.text, &format!("{pct}%"));
+            f.draw(px, Face::Ui, 12.0 * s, ix + 32.0 * s + w, cy + 3.0 * s, th.dim, if charging { "charging" } else { "on battery" });
+            cy += 26.0 * s;
         }
-        // power row and settings
-        let by = y + h - 24.0 * s - 44.0 * s - 10.0 * s - 44.0 * s;
-        let bw = (iw - 3.0 * 8.0 * s) / 4.0;
+
+        // power row and Settings, small
+        cy += 10.0 * s;
+        let bh = 36.0 * s;
+        let bw = (iw - 3.0 * gap) / 4.0;
         for (i, (key, ic)) in [("lock", "lock"), ("sleep", "sleep"), ("restart", "restart"), ("poweroff", "power")].iter().enumerate() {
-            let bx = ix + i as f32 * (bw + 8.0 * s);
-            let r = Rect::new(bx as i32, by as i32, bw as i32, (44.0 * s) as i32);
-            draw::rrect(px, bx, by, bw, 44.0 * s, 10.0 * s, if hov(hot) { th.line } else { th.raised });
-            draw::rrect_line(px, bx, by, bw, 44.0 * s, 10.0 * s, th.line, 1.0);
-            draw::icon(px, ic, bx + (bw - 18.0 * s) / 2.0, by + 13.0 * s, 18.0 * s, if *key == "poweroff" { th.accent } else { th.text }, 1.6);
+            let bx = ix + i as f32 * (bw + gap);
+            let r = Rect::new(bx as i32, cy as i32, bw as i32, bh as i32);
+            draw::rrect(px, bx, cy, bw, bh, 9.0 * s, if hov(hot) { th.line } else { th.raised });
+            draw::rrect_line(px, bx, cy, bw, bh, 9.0 * s, th.line, 1.0);
+            draw::icon(px, ic, bx + (bw - 16.0 * s) / 2.0, cy + (bh - 16.0 * s) / 2.0, 16.0 * s, if *key == "poweroff" { th.accent } else { th.text }, 1.6);
             hot.push((at(r), Hot::Power(key)));
         }
-        let sy2 = by + 54.0 * s;
-        let r = Rect::new(ix as i32, sy2 as i32, iw as i32, (44.0 * s) as i32);
-        draw::rrect(px, ix, sy2, iw, 44.0 * s, 10.0 * s, if hov(hot) { th.line } else { th.raised });
-        draw::rrect_line(px, ix, sy2, iw, 44.0 * s, 10.0 * s, th.line, 1.0);
-        let lw = f.measure(Face::UiBold, 14.0 * s, "Settings") + 27.0 * s;
-        draw::icon(px, "settings", ix + (iw - lw) / 2.0, sy2 + 13.5 * s, 17.0 * s, th.text, 1.6);
-        f.draw(px, Face::UiBold, 14.0 * s, ix + (iw - lw) / 2.0 + 27.0 * s, sy2 + 13.0 * s, th.text, "Settings");
+        cy += bh + gap;
+        let r = Rect::new(ix as i32, cy as i32, iw as i32, bh as i32);
+        draw::rrect(px, ix, cy, iw, bh, 9.0 * s, if hov(hot) { th.line } else { th.raised });
+        draw::rrect_line(px, ix, cy, iw, bh, 9.0 * s, th.line, 1.0);
+        let lw = f.measure(Face::UiBold, 12.5 * s, "Settings") + 24.0 * s;
+        draw::icon(px, "settings", ix + (iw - lw) / 2.0, cy + (bh - 15.0 * s) / 2.0, 15.0 * s, th.text, 1.6);
+        f.draw(px, Face::UiBold, 12.5 * s, ix + (iw - lw) / 2.0 + 24.0 * s, cy + 10.0 * s, th.text, "Settings");
         hot.push((at(r), Hot::Settings));
     }
 }

@@ -134,12 +134,23 @@ Window {
             Text { id: date; text: core.date(); color: c.text; font.pixelSize: 18 * s }
             Timer { interval: 10000; running: true; repeat: true; onTriggered: { clock.text = core.clock(); date.text = core.date() } }
         }
-        // power, bottom right
+        // power and Wi-Fi, bottom right
         Rectangle {
+            id: corner
             anchors.right: parent.right; anchors.rightMargin: 40 * s; anchors.bottom: parent.bottom; anchors.bottomMargin: 44 * s
             width: pr.implicitWidth + 12 * s; height: 56 * s; radius: 12 * s; color: Qt.alpha(c.surf, 0.88); border.color: c.line
             Row {
                 id: pr; anchors.centerIn: parent; spacing: 4 * s
+                Button {
+                    id: wifiBtn
+                    visible: wifi.available
+                    width: visible ? 44 * s : 0; height: 44 * s
+                    Accessible.name: "Wi-Fi"
+                    ToolTip.visible: hovered; ToolTip.text: wifi.current ? "Wi-Fi: " + wifi.current : "Wi-Fi"
+                    onClicked: { wifiPanel.visible = !wifiPanel.visible; if (wifiPanel.visible) wifi.refresh() }
+                    background: Rectangle { radius: 9 * s; color: parent.hovered || wifiPanel.visible ? c.raised : "transparent" }
+                    contentItem: Icon { name: "wifi"; tint: wifi.current ? c.accent : c.text; size: 19 * s; anchors.centerIn: parent }
+                }
                 Repeater {
                     model: [["restart", "Restart", "restart"], ["poweroff", "Power off", "power"]]
                     Button {
@@ -151,6 +162,112 @@ Window {
                         background: Rectangle { radius: 9 * s; color: parent.hovered ? c.raised : "transparent" }
                         contentItem: Icon { name: modelData[2]; tint: c.text; size: 19 * s; anchors.centerIn: parent }
                     }
+                }
+            }
+        }
+        // Wi-Fi before logging in: compact, above its button
+        Rectangle {
+            id: wifiPanel
+            visible: false
+            anchors.right: corner.right; anchors.bottom: corner.top; anchors.bottomMargin: 8 * s
+            width: 300 * s; height: wcol.implicitHeight + 20 * s
+            radius: 12 * s; color: Qt.alpha(c.surf, 0.96); border.color: c.line
+            property string pick: ""
+            Component.onCompleted: if (openAtStart.indexOf("wifi") === 0) { visible = true; wifi.refresh(); pickLater.start() }
+            Timer { id: pickLater; interval: 400; onTriggered: { var p = openAtStart.split(":")[1]; if (p) { for (var i = 0; i < wifi.nets.length; i++) if (wifi.nets[i].ssid === p) { wifiPanel.pick = p; wifiPanel.preset = wifi.nets[i].campus } } } }
+            property string preset: ""
+            property bool secure: false
+            Keys.onEscapePressed: visible = false
+            Column {
+                id: wcol
+                x: 10 * s; y: 10 * s; width: parent.width - 20 * s; spacing: 2 * s
+                Row {
+                    width: parent.width; height: 26 * s; spacing: 6 * s
+                    Text { text: "Wi-Fi"; color: c.text; font.pixelSize: 13 * s; font.weight: Font.DemiBold; anchors.verticalCenter: parent.verticalCenter }
+                    Text { text: wifi.current ? "· " + wifi.current : ""; color: c.dim; font.pixelSize: 12 * s; elide: Text.ElideRight; width: parent.width - 110 * s; anchors.verticalCenter: parent.verticalCenter }
+                    Button {
+                        width: 40 * s; height: 24 * s; anchors.verticalCenter: parent.verticalCenter
+                        Accessible.name: "Look again"
+                        onClicked: wifi.refresh()
+                        background: Rectangle { radius: 6 * s; color: parent.hovered ? c.raised : "transparent" }
+                        contentItem: Text { text: "↻"; color: c.dim; font.pixelSize: 14 * s; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                    }
+                }
+                Text { visible: wifi.nets.length === 0; text: wifi.busy ? "" : "Looking for networks…"; color: c.dim; font.pixelSize: 12 * s; height: visible ? 26 * s : 0; verticalAlignment: Text.AlignVCenter }
+                Repeater {
+                    model: wifi.nets
+                    Column {
+                        required property var modelData
+                        width: wcol.width
+                        Button {
+                            width: parent.width; height: 28 * s
+                            Accessible.name: modelData.ssid
+                            onClicked: {
+                                wifiPanel.pick = modelData.ssid; wifiPanel.preset = modelData.campus; wifiPanel.secure = modelData.secure
+                                if (!modelData.secure && !modelData.campus) { wifi.join(modelData.ssid, ""); wifiPanel.pick = "" }
+                                else (modelData.campus ? wuser : wpass).forceActiveFocus()
+                            }
+                            background: Rectangle { radius: 6 * s; color: parent.hovered || wifiPanel.pick === modelData.ssid ? c.raised : "transparent" }
+                            contentItem: Row {
+                                spacing: 6 * s; leftPadding: 6 * s
+                                Row {
+                                    spacing: 1.5 * s; anchors.verticalCenter: parent.verticalCenter
+                                    Repeater {
+                                        model: 3
+                                        Rectangle { required property int index; width: 2.5 * s; height: (4 + 3 * index) * s; radius: 1; anchors.bottom: parent.bottom; color: modelData.signal >= [1, 40, 70][index] ? c.text : c.line }
+                                    }
+                                }
+                                Text {
+                                    text: modelData.ssid + (modelData.secure ? "  🔒" : "")
+                                    width: wcol.width - 110 * s; elide: Text.ElideRight
+                                    color: modelData.active ? c.accent : c.text; font.pixelSize: 12.5 * s; font.weight: modelData.active ? Font.DemiBold : Font.Normal
+                                    anchors.verticalCenter: parent.verticalCenter
+                                }
+                                Text { text: modelData.active ? "Connected" : (modelData.campus ? "Campus" : ""); color: c.dim; font.pixelSize: 11 * s; anchors.verticalCenter: parent.verticalCenter }
+                            }
+                        }
+                        // sign-in for the picked network, inline
+                        Column {
+                            visible: wifiPanel.pick === modelData.ssid && (modelData.secure || modelData.campus)
+                            width: parent.width; spacing: 4 * s; topPadding: 2 * s; bottomPadding: 6 * s
+                            TextField {
+                                id: wuser
+                                visible: modelData.campus !== ""
+                                width: parent.width; height: 30 * s; font.pixelSize: 12.5 * s
+                                placeholderText: modelData.campus === "ucalgary" ? "UCalgary username" : "you@your-university"
+                                color: c.text; placeholderTextColor: c.dim
+                                background: Rectangle { radius: 7 * s; color: c.field || c.raised; border.color: wuser.activeFocus ? c.accent : c.line }
+                                onAccepted: wpass.forceActiveFocus()
+                            }
+                            Row {
+                                width: parent.width; spacing: 6 * s
+                                TextField {
+                                    id: wpass
+                                    width: parent.width - 60 * s; height: 30 * s; font.pixelSize: 12.5 * s
+                                    echoMode: TextInput.Password; placeholderText: "Password"
+                                    color: c.text; placeholderTextColor: c.dim
+                                    background: Rectangle { radius: 7 * s; color: c.field || c.raised; border.color: wpass.activeFocus ? c.accent : c.line }
+                                    onAccepted: joinBtn.clicked()
+                                }
+                                Button {
+                                    id: joinBtn
+                                    width: 54 * s; height: 30 * s; enabled: !wifi.busy
+                                    Accessible.name: "Join"
+                                    onClicked: {
+                                        var p = wpass.text; wpass.text = ""
+                                        if (modelData.campus) { wifi.campus(modelData.campus, wuser.text, p) } else { wifi.join(modelData.ssid, p) }
+                                    }
+                                    background: Rectangle { radius: 7 * s; color: c.accent; opacity: parent.enabled ? 1 : 0.5 }
+                                    contentItem: Text { text: "Join"; color: c.onAccent; font.pixelSize: 12 * s; font.weight: Font.DemiBold; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                }
+                            }
+                        }
+                    }
+                }
+                Text {
+                    visible: wifi.note !== ""
+                    width: parent.width; wrapMode: Text.Wrap; topPadding: 4 * s
+                    text: wifi.note; color: wifi.bad ? "#E0705A" : c.dim; font.pixelSize: 11.5 * s
                 }
             }
         }

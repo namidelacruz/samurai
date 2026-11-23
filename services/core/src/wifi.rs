@@ -317,7 +317,7 @@ pub fn setup_campus(preset: &str, user: &str, password: &str, realm: Option<&str
     }
     let identity = p.identity.replace("{user}", &user).replace("{realm}", &realm);
     let domain = p.domain.replace("{realm}", &realm);
-    let owner = std::env::var("USER").unwrap_or_default();
+    let owner = if for_everyone() { String::new() } else { std::env::var("USER").unwrap_or_default() };
     let mut visible: HashMap<String, String> = HashMap::new();
     for n in scan(false) {
         visible.insert(n.ssid.to_lowercase(), n.ssid);
@@ -333,14 +333,27 @@ pub fn setup_campus(preset: &str, user: &str, password: &str, realm: Option<&str
     Ok(made)
 }
 
+/// A network for the whole machine rather than one user: set by the login screen (SHADOW_SYSTEM=1),
+/// where the connection must stay up after someone logs in.
+fn for_everyone() -> bool {
+    std::env::var("SHADOW_SYSTEM").is_ok_and(|v| v == "1")
+}
+
 pub fn connect_psk(ssid: &str, password: &str, cb: Cb) -> bool {
+    connect_psk_opts(ssid, password, false, cb)
+}
+
+pub fn connect_psk_opts(ssid: &str, password: &str, hidden: bool, cb: Cb) -> bool {
     let name = format!("{PREFIX}{ssid}");
     nm(&["connection", "delete", "id", &name]);
-    let owner = std::env::var("USER").unwrap_or_default();
+    let owner = if for_everyone() { String::new() } else { std::env::var("USER").unwrap_or_default() };
     let perm = format!("user:{owner}");
     let mut args = vec!["connection", "add", "type", "wifi", "con-name", &name, "ifname", "*", "ssid", ssid, "connection.autoconnect", "yes"];
     if !password.is_empty() {
         args.extend(["wifi-sec.key-mgmt", "wpa-psk", "wifi-sec.psk-flags", "0"]);
+    }
+    if hidden {
+        args.extend(["802-11-wireless.hidden", "yes"]);
     }
     if !owner.is_empty() {
         args.extend(["connection.permissions", &perm]);
@@ -1247,7 +1260,7 @@ fn die(m: &str) -> i32 {
     1
 }
 
-const USAGE: &str = "usage: shadow wifi status | scan [--tsv] | connect SSID [--password-stdin]\n                      | campus ucalgary|eduroam [--user U] [--realm R] [--password-stdin]\n                      | repair [PROFILE] | forget PROFILE | guard [--once] | log\n                      | device [--fix] [--diag] | netd [--once] | iwd-provision ucalgary|eduroam --user U [--password-stdin]";
+const USAGE: &str = "usage: shadow wifi status | scan [--tsv] | connect SSID [--password-stdin] [--hidden]\n                      | campus ucalgary|eduroam [--user U] [--realm R] [--password-stdin]\n                      | repair [PROFILE] | forget PROFILE | guard [--once] | log\n                      | device [--fix] [--diag] | netd [--once] | iwd-provision ucalgary|eduroam --user U [--password-stdin]";
 
 pub fn main(args: &[&str]) -> i32 {
     let pr = |l: &str| {
@@ -1297,7 +1310,7 @@ pub fn main(args: &[&str]) -> i32 {
                 return exit(connect_with_repair(&mine, cb, true, true, 8, 0));
             }
             let pw = if stdin_pw { read_line() } else if std::io::stdin().is_terminal() { getpass(&format!("Password for {ssid} (empty for open network): ")) } else { String::new() };
-            exit(connect_psk(ssid, &pw, cb))
+            exit(connect_psk_opts(ssid, &pw, args.contains(&"--hidden"), cb))
         }
         "campus" if args.len() >= 2 && PRESETS.iter().any(|p| p.id == args[1]) => {
             let user = match opt("--user") {

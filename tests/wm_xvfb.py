@@ -10,7 +10,7 @@ if not shutil.which("Xvfb"):
     print("skip: Xvfb is not installed"); sys.exit(0)
 tmp = Path(tempfile.mkdtemp(prefix="samurai-wmtest-"))
 disp = ":%d" % (90 + os.getpid() % 9)
-env = dict(os.environ, DISPLAY=disp, XDG_RUNTIME_DIR=str(tmp), SAMURAI_CONFIG=str(tmp / "config"), HOME=str(tmp / "home"), USER="samtest")
+env = dict(os.environ, PATH=str(ROOT / "tests/x11/net") + ":" + os.environ["PATH"], NET_CALLS=str(tmp / "calls"), DISPLAY=disp, XDG_RUNTIME_DIR=str(tmp), SAMURAI_CONFIG=str(tmp / "config"), HOME=str(tmp / "home"), USER="samtest")
 (tmp / "home").mkdir()
 procs = []
 def spawn(*a, **k):
@@ -57,6 +57,18 @@ try:
         if msg("ping") == "pong": break
         time.sleep(0.1)
     check("restart keeps every window, tucked ones included", set(wins()) == {"Files", "Terminal", "Editor"} and wm.poll() is None and wm.pid == pid)
+    # the quick panel: open the Wi-Fi list, pick a secured network, type a password, send it
+    msg("overview"); time.sleep(1.0)
+    keys("click", "1200", "225"); time.sleep(2.5)
+    calls = (tmp / "calls").read_text() if (tmp / "calls").exists() else ""
+    check("the Wi-Fi list is read only once it is opened", "device wifi list" in calls)
+    keys("click", "1200", "381"); time.sleep(0.6)
+    keys("type", "wrong"); keys("tap", "Return"); time.sleep(1.5)
+    calls = (tmp / "calls").read_text()
+    check("joining sends the password on stdin, never as an argument",
+          "shadow wifi connect Neighbour:Net --password-stdin (password length 5)" in calls and "wrong" not in calls)
+    keys("tap", "Escape"); time.sleep(0.6)
+    check("Escape closes the overview after that", state().get("overview") is False)
     msg("close"); time.sleep(0.6)
     check("close asks the focused window to leave", len(wins()) == 2)
 finally:

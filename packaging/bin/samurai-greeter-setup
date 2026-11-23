@@ -12,6 +12,7 @@ set -eu
 [ "$(id -u)" = 0 ] || { echo "samurai-greeter-setup: run as root" >&2; exit 1; }
 GREETD=/etc/greetd/config.toml
 DM=/etc/systemd/system/display-manager.service
+POLKIT_RULE=/etc/polkit-1/rules.d/50-samurai-greeter-wifi.rules
 greeter_user() { for u in greeter greetd _greetd; do id "$u" >/dev/null 2>&1 && { echo "$u"; return; }; done; return 1; }
 
 if [ "${1:-}" = "--remove" ]; then
@@ -26,6 +27,7 @@ if [ "${1:-}" = "--remove" ]; then
         elif [ "$prev" != greetd.service ]; then systemctl enable --force "$prev" >/dev/null 2>&1 || true; fi
     fi
     rm -f /etc/samurai/greeter.json /etc/samurai/previous-display-manager /usr/share/samurai/greeter-night.svg /usr/share/samurai/greeter-paper.svg
+    grep -qs "written by Samurai" "$POLKIT_RULE" && rm -f "$POLKIT_RULE"
     echo "login screen: what was there before is back (from the next boot)"; exit 0
 fi
 
@@ -75,6 +77,26 @@ cat > "$NEW" <<JSON
 JSON
 python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$NEW" || { rm -f "$NEW"; echo "could not write the login screen's settings" >&2; exit 4; }
 chmod 0644 "$NEW"; mv -f "$NEW" /etc/samurai/greeter.json
+
+# Wi-Fi on the login screen: NetworkManager lets the login screen's user (and only that user)
+# join networks for the whole machine. A file of your own with this name is kept.
+if [ -d /etc/polkit-1/rules.d ] && { [ ! -e "$POLKIT_RULE" ] || grep -qs "written by Samurai" "$POLKIT_RULE"; }; then
+    cat > "$POLKIT_RULE.new" <<JS
+// samurai: written by Samurai (samurai-greeter-setup); removed by samurai-greeter-setup --remove.
+// Lets the login screen's user "$GUSER" scan for Wi-Fi and join a network before anyone logs in.
+// Nothing else is allowed: no other user, no other NetworkManager action.
+polkit.addRule(function(action, subject) {
+    if (subject.user == "$GUSER" &&
+        (action.id == "org.freedesktop.NetworkManager.network-control" ||
+         action.id == "org.freedesktop.NetworkManager.settings.modify.system" ||
+         action.id == "org.freedesktop.NetworkManager.wifi.scan" ||
+         action.id == "org.freedesktop.NetworkManager.enable-disable-wifi")) {
+        return polkit.Result.YES;
+    }
+});
+JS
+    chmod 0644 "$POLKIT_RULE.new" && mv -f "$POLKIT_RULE.new" "$POLKIT_RULE"
+fi
 
 if [ -f "$GREETD" ] && ! grep -q samurai "$GREETD" && [ ! -f "$GREETD.before-samurai" ]; then cp -p "$GREETD" "$GREETD.before-samurai"; fi
 cat > "$GREETD.new" <<TOML

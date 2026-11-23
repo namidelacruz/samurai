@@ -77,8 +77,11 @@ fn main() {
         }
     };
     unsafe {
-        // children we start are not ours to wait for
-        libc::signal(libc::SIGCHLD, libc::SIG_IGN);
+        // Children are waited for by status::spawn / Status::job (one thread each), so there are no
+        // zombies. SIGCHLD must NOT be ignored: that makes every wait fail (so no tool output
+        // could be read: Wi-Fi, sound, brightness all looked off) and it is inherited by every
+        // app started from here, which breaks apps that wait for their own children.
+        libc::signal(libc::SIGCHLD, libc::SIG_DFL);
         libc::signal(libc::SIGPIPE, libc::SIG_IGN);
     }
     for cmd in wm.cfg.autostart.clone() {

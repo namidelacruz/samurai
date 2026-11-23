@@ -25,6 +25,10 @@ part "Settings pages render (offscreen)"
 if python3 -c 'import PySide6' 2>/dev/null; then QT_QPA_PLATFORM=offscreen python3 tests/settings_shots.py >/tmp/samurai-shots.log 2>&1; rc=$?; tail -n 2 /tmp/samurai-shots.log; result $rc
 else echo "   skip: PySide6 is not installed"; fi
 
+part "login screen Wi-Fi (stand-in NetworkManager)"
+if python3 -c 'import PySide6' 2>/dev/null; then QT_QPA_PLATFORM=offscreen python3 tests/greeter_wifi.py > /tmp/samurai-gwifi.log 2>&1; rc=$?; grep -v "propagate\|QProcess: Destroyed" /tmp/samurai-gwifi.log; result $rc
+else echo "   skip: PySide6 is not installed"; fi
+
 part "login screen against greetd's fakegreet"
 FG=${FAKEGREET:-$(command -v fakegreet || true)}
 if [ -n "$FG" ] && python3 -c 'import PySide6' 2>/dev/null; then

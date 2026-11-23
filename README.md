@@ -21,6 +21,12 @@ the screen itself (it is its own compositor, like Hyprland or niri on Wayland). 
   `samurai: written by Samurai`); a config of your own is left alone.
 - **Settings that read plainly.** Ten pages: Look, Displays, Network, Sound, Keyboard, Mouse,
   Apps, Power, Notifications, System. Every setting is searchable from Super too.
+- **Compact quick controls.** In the overview: small tiles for Wi-Fi, Bluetooth, Quiet, Night
+  light, night/paper and screenshots; a row each for Wi-Fi and Bluetooth that opens into the
+  list of networks or paired devices (a secured network asks for its password right there);
+  slim volume and brightness sliders.
+- **Wi-Fi before you log in.** The login screen has a Wi-Fi button: pick a network, type its
+  password, or sign in to UC-Secure / eduroam, without logging in first.
 - **Campus Wi-Fi fixed in Settings.** UC-Secure / AirUC-Secure and eduroam set up and repair in
   Settings › Network, with a log you can read.
 - **Its own login screen and lock screen**, in the same design. The lock checks your password
@@ -196,6 +202,17 @@ samurai update install
 If the login screen still does not appear, its log is the newest `/tmp/samurai-greeter.*.log`
 (`ls -t /tmp/samurai-greeter.*.log | head -1`) and the X server's log is in
 `/run/user/<id>/samurai-xdata/xorg/` (or `/tmp/samurai-xdata-<id>/xorg/`).
+
+## Wi-Fi on the login screen
+
+The login screen runs as greetd's own user, which normally may not change the network. Setting
+up the login screen therefore adds one small permission file,
+`/etc/polkit-1/rules.d/50-samurai-greeter-wifi.rules`, that lets **that user only** scan for
+Wi-Fi and join a network through NetworkManager, nothing else. Networks joined there are for the
+whole machine, so they stay connected after you log in. Passwords go to NetworkManager directly
+and are never written to a log. `samurai greeter remove` (or `./install.sh --uninstall`) deletes
+the file again; a file of your own with that name is never touched. Without NetworkManager the
+Wi-Fi button simply does not appear.
 
 ## If the login screen is too small or too big
 

@@ -230,6 +230,8 @@ impl Fonts {
 
 pub fn icon_svg(name: &str) -> &'static str {
     match name {
+        "chev" => r#"<path d="M9.5 6.5l5.5 5.5-5.5 5.5"/>"#,
+        "chev-down" => r#"<path d="M6.5 9.5l5.5 5.5 5.5-5.5"/>"#,
         "search" => r#"<circle cx="11" cy="11" r="7"/><path d="M16.5 16.5L21 21"/>"#,
         "wifi" => r#"<path d="M2.5 8.8a14 14 0 0 1 19 0"/><path d="M5.6 12.2a9.5 9.5 0 0 1 12.8 0"/><path d="M8.8 15.5a5 5 0 0 1 6.4 0"/><circle cx="12" cy="19" r="0.9"/>"#,
         "wifi-off" => r#"<path d="M2.5 8.8a14 14 0 0 1 19 0" opacity="0.35"/><path d="M5.6 12.2a9.5 9.5 0 0 1 12.8 0" opacity="0.35"/><path d="M4 4l16 16"/>"#,

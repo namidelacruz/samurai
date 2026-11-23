@@ -38,6 +38,9 @@ ACCENT = {"indigo": ("#2F4B8F", "#93ABEB"), "moss": ("#4A6B3A", "#9CC28A"), "rus
 
 
 ICONS = {
+    "bt": '<path d="M7 7.5l10 9-5 4.5V3l5 4.5-10 9"/>',
+    "refresh": '<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 4.5v4h-4"/>',
+    "eye-off": '<path d="M3 3l18 18"/><path d="M10.6 6.1A9.8 9.8 0 0 1 12 6c5 0 8.5 4.5 9.5 6-.5.8-1.6 2.2-3.1 3.5M6.4 7.6C4.7 8.8 3.4 10.6 2.5 12c1 1.5 4.5 6 9.5 6 1.4 0 2.7-.3 3.8-.9"/>',
     "search": '<circle cx="11" cy="11" r="7"/><path d="M16.5 16.5L21 21"/>',
     "wifi": '<path d="M2.5 8.8a14 14 0 0 1 19 0"/><path d="M5.6 12.2a9.5 9.5 0 0 1 12.8 0"/><path d="M8.8 15.5a5 5 0 0 1 6.4 0"/><circle cx="12" cy="19" r="0.9"/>',
     "sound": '<path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M15.5 9.5a3.5 3.5 0 0 1 0 5"/><path d="M18 7a7 7 0 0 1 0 10"/>',
@@ -63,6 +66,22 @@ ICONS = {
     "power": '<path d="M12 3.5v8"/><path d="M6.6 7a7.5 7.5 0 1 0 10.8 0"/>',
     "restart": '<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 4.5v4h-4"/>',
 }
+
+
+def plain_error(text):
+    """A network or Bluetooth tool's error, in plain words where the usual ones are known."""
+    low = (text or "").lower()
+    if "secrets were required" in low or "wrong password" in low or "invalid key" in low:
+        return "Wrong password, or the network refused it."
+    if "no network with ssid" in low:
+        return "That network is out of range now."
+    if "not authorized" in low or "insufficient privileges" in low:
+        return "Not allowed: your account may not change network settings."
+    if "is not installed" in low:
+        return text
+    lines = [l.strip() for l in (text or "").splitlines() if l.strip()]
+    last = (lines[-1] if lines else "That did not work.").replace("Error:", "").strip()
+    return last[:120]
 
 
 def data_dirs():
@@ -196,6 +215,8 @@ class Core(QObject):
             cb = self._after.pop(tag, None)
             if cb:
                 cb(code, text)
+            if code != 0 and (tag.startswith("net:") or tag.startswith("bt:")) and tag != "net:log":
+                text = plain_error(text)
             self.done.emit(tag, code, text)
             p.deleteLater()
         p.finished.connect(fin)
@@ -288,6 +309,14 @@ class Core(QObject):
         rows, seen = [], set()
         if code != 0:
             return rows
+        # saved profiles: the network's name → the profile (Samurai names its own "SN <ssid>")
+        _, saved = sh(["nmcli", "-t", "-f", "NAME,TYPE", "connection", "show"], timeout=10)
+        known = {}
+        for l in saved.splitlines():
+            f = re.split(r"(?<!\\):", l)
+            if len(f) >= 2 and "wireless" in f[-1]:
+                name = ":".join(f[:-1]).replace("\\:", ":")
+                known[name[3:] if name.startswith("SN ") else name] = name
         for l in out.splitlines():
             parts = re.split(r"(?<!\\):", l, maxsplit=3)
             if len(parts) < 4:
@@ -296,9 +325,27 @@ class Core(QObject):
             if not ssid or ssid in seen:
                 continue
             seen.add(ssid)
-            rows.append(dict(on=parts[0] == "*", signal=int(parts[1] or 0), secure=parts[2] not in ("", "--"), ssid=ssid))
-        rows.sort(key=lambda r: (not r["on"], -r["signal"]))
+            rows.append(dict(on=parts[0] == "*", signal=int(parts[1] or 0), secure=parts[2] not in ("", "--"), ssid=ssid,
+                             profile=known.get(ssid, ""), campus=bool(re.search(r"uc-secure|eduroam", ssid, re.I))))
+        rows.sort(key=lambda r: (not r["on"], r["profile"] == "", -r["signal"]))
         return rows
+
+    @Slot(result="QVariant")
+    def bluetooth(self):
+        """Bluetooth: on or off, and the paired devices (connected first)."""
+        if not shutil.which("bluetoothctl"):
+            return {"have": False, "on": False, "devices": []}
+        _, show = sh(["bluetoothctl", "show"], timeout=5)
+        _, paired = sh(["bluetoothctl", "devices", "Paired"], timeout=5)
+        _, conn = sh(["bluetoothctl", "devices", "Connected"], timeout=5)
+        connected = {l.split(" ", 2)[1] for l in conn.splitlines() if l.startswith("Device ") and len(l.split(" ")) > 1}
+        devs = []
+        for l in paired.splitlines():
+            parts = l.split(" ", 2)
+            if len(parts) >= 2 and parts[0] == "Device":
+                devs.append({"mac": parts[1], "name": parts[2].strip() if len(parts) > 2 and parts[2].strip() else parts[1], "on": parts[1] in connected})
+        devs.sort(key=lambda d: not d["on"])
+        return {"have": True, "on": "Powered: yes" in show, "devices": devs}
 
     @Slot(result="QVariant")
     def audio(self):

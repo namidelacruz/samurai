@@ -18,7 +18,7 @@ import json, os, socket, struct, subprocess, sys, traceback
 from pathlib import Path
 
 try:
-    from PySide6.QtCore import QObject, QTimer, QUrl, Property, Signal, Slot
+    from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, QUrl, Property, Signal, Slot
     from PySide6.QtGui import QGuiApplication, QCursor
     from PySide6.QtQml import QQmlApplicationEngine
     from PySide6.QtQuick import QQuickWindow  # noqa: F401  (windows come back as QQuickWindow)
@@ -82,6 +82,175 @@ class Fake:
             print("would start:", msg["cmd"], flush=True)
             return {"type": "success"}
         return {"type": "success"}
+
+
+SHADOW = os.environ.get("SAMURAI_SHADOW", "/opt/samurai/bin/shadow")
+CAMPUS = {"uc-secure": "ucalgary", "airuc-secure": "ucalgary", "eduroam": "eduroam"}
+
+
+def nm_fields(line):
+    """nmcli -t: fields split on ':', a ':' inside a field written as '\\:'."""
+    out, cur, esc = [], "", False
+    for ch in line:
+        if esc:
+            cur += ch; esc = False
+        elif ch == "\\":
+            esc = True
+        elif ch == ":":
+            out.append(cur); cur = ""
+        else:
+            cur += ch
+    out.append(cur)
+    return out
+
+
+def plain_error(text):
+    low = text.lower()
+    if "secrets were required" in low or "wrong password" in low or "invalid key" in low:
+        return "Wrong password, or the network refused it."
+    if "not authorized" in low or "permission" in low or "insufficient privileges" in low:
+        return "The login screen is not allowed to change Wi-Fi here (see Samurai's README)."
+    if "no network with ssid" in low:
+        return "That network is out of range now."
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    last = (lines[-1] if lines else "It did not work.").replace("Error:", "").strip()
+    return last[:90] + ("…" if len(last) > 90 else "")
+
+
+class Wifi(QObject):
+    """Wi-Fi before logging in, through NetworkManager. Connections made here are for the whole
+    machine (a polkit rule written by samurai-greeter-setup allows exactly that for the login
+    screen's user). Passwords go to the tool on its standard input, never on a command line,
+    and are never logged."""
+    changed = Signal()
+
+    def __init__(self):
+        super().__init__()
+        self._nets, self._note, self._bad, self._busy = [], "", False, False
+        self._nmcli = next((d + "/nmcli" for d in os.environ.get("PATH", "/usr/bin").split(":") if os.access(d + "/nmcli", os.X_OK)), "")
+        self._current = ""
+
+    def _env(self):
+        e = QProcessEnvironment.systemEnvironment()
+        # the login screen's user may have / as its home: tools get a folder they can write to
+        e.insert("HOME", os.environ.get("XDG_RUNTIME_DIR") or "/tmp")
+        # networks joined here belong to the whole machine, so they stay up after someone logs in
+        e.insert("SHADOW_SYSTEM", "1")
+        return e
+
+    @Property(bool, constant=True)
+    def available(self):
+        return bool(self._nmcli)
+
+    @Property("QVariant", notify=changed)
+    def nets(self):
+        return self._nets
+
+    @Property(str, notify=changed)
+    def note(self):
+        return self._note
+
+    @Property(bool, notify=changed)
+    def bad(self):
+        return self._bad
+
+    @Property(bool, notify=changed)
+    def busy(self):
+        return self._busy
+
+    @Property(str, notify=changed)
+    def current(self):
+        return self._current
+
+    def _run(self, args, done, stdin=None, timeout=45000):
+        p = QProcess(self)
+        p.setProcessEnvironment(self._env())
+        p.setProcessChannelMode(QProcess.MergedChannels)
+        timer = QTimer(self, singleShot=True, interval=timeout)
+        timer.timeout.connect(p.kill)
+
+        def finished(code, _status):
+            try:
+                timer.stop()
+                out = bytes(p.readAll()).decode(errors="replace")
+                p.deleteLater()
+            except RuntimeError:  # the screen is closing (a login went through): nothing to show
+                return
+            try:
+                done(code, out)
+            except Exception as e:  # a parsing surprise must not take the login screen down
+                print(f"samurai-greeter: wifi: {e}", file=sys.stderr)
+
+        def failed(err):
+            if err == QProcess.FailedToStart:  # finished() never comes for this one
+                timer.stop()
+                try:
+                    done(127, f"{os.path.basename(args[0])} could not start")
+                except Exception as e:
+                    print(f"samurai-greeter: wifi: {e}", file=sys.stderr)
+        p.finished.connect(finished)
+        p.errorOccurred.connect(failed)
+        p.start(args[0], args[1:])
+        if stdin is not None:
+            p.write((stdin + "\n").encode())
+            p.closeWriteChannel()
+        timer.start()
+
+    @Slot()
+    def refresh(self):
+        if not self._nmcli:
+            return
+        def got(code, out):
+            nets = {}
+            for line in out.splitlines():
+                f = nm_fields(line)
+                if len(f) < 4 or not f[1]:
+                    continue
+                n = {"ssid": f[1], "signal": int(f[2]) if f[2].isdigit() else 0, "secure": f[3].strip() not in ("", "--"),
+                     "active": f[0].strip() == "*", "campus": CAMPUS.get(f[1].lower(), "")}
+                o = nets.get(n["ssid"])
+                if o is None or n["signal"] > o["signal"]:
+                    if o is not None:
+                        n["active"] = n["active"] or o["active"]
+                    nets[n["ssid"]] = n
+                elif n["active"]:
+                    o["active"] = True
+            self._nets = sorted(nets.values(), key=lambda n: (not n["active"], -n["signal"]))[:10]
+            self._current = next((n["ssid"] for n in self._nets if n["active"]), "")
+            if code != 0 and not self._nets:
+                self._note, self._bad = plain_error(out), True
+            self.changed.emit()
+        self._run([self._nmcli, "-t", "-f", "IN-USE,SSID,SIGNAL,SECURITY", "device", "wifi", "list", "--rescan", "auto"], got, timeout=20000)
+
+    def _finish(self, ok_text):
+        def done(code, out):
+            self._busy = False
+            if code == 0:
+                self._note, self._bad = ok_text, False
+            else:
+                self._note, self._bad = plain_error(out), True
+            self.changed.emit()
+            self.refresh()
+        return done
+
+    @Slot(str, str)
+    def join(self, ssid, password):
+        if self._busy or not ssid:
+            return
+        self._busy, self._note, self._bad = True, "Connecting…", False
+        self.changed.emit()
+        if password:
+            self._run([SHADOW, "wifi", "connect", ssid, "--password-stdin"], self._finish(f"Connected to {ssid}"), stdin=password)
+        else:
+            self._run([self._nmcli, "device", "wifi", "connect", ssid], self._finish(f"Connected to {ssid}"))
+
+    @Slot(str, str, str)
+    def campus(self, preset, user, password):
+        if self._busy or not user:
+            return
+        self._busy, self._note, self._bad = True, "Setting up the campus network…", False
+        self.changed.emit()
+        self._run([SHADOW, "wifi", "campus", preset, "--user", user, "--password-stdin"], self._finish("Campus Wi-Fi is set up"), stdin=password, timeout=90000)
 
 
 def load_conf(path):
@@ -305,6 +474,10 @@ def main():
     eng = QQmlApplicationEngine()
     eng.addImportPath(str(SETTINGS_QML))
     eng.rootContext().setContextProperty("core", core)
+    wifi = Wifi()
+    eng.rootContext().setContextProperty("wifi", wifi)
+    # tests and pictures: open a panel at start ("wifi", or "wifi:SSID" to pick a network too)
+    eng.rootContext().setContextProperty("openAtStart", os.environ.get("SAMURAI_GREETER_OPEN", ""))
     eng.rootContext().setContextProperty("safeMode", SAFE)
     eng.rootContext().setContextProperty("partsDir", QUrl.fromLocalFile(str(SETTINGS_QML) + "/").toString())
     eng.load(QUrl.fromLocalFile(str(HERE / "Greeter.qml")))
