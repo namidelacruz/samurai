@@ -1,0 +1,75 @@
+#!/bin/sh
+# samurai-xserver [status|xlibre|xorg]: which X server runs Samurai, and a guided switch.
+# Samurai works the same on X.Org and on XLibre (a fork of the X.Org server that keeps its
+# protocol, drivers and config). Switching swaps system packages, so this never runs on its own:
+# it shows the plan and asks first, and pacman asks again before it removes anything.
+# It never adds a package repository or a signing key for you.
+set -u
+say() { printf '%s\n' "$*"; }
+ask() { printf '%s [y/N] ' "$1"; read -r a || a=; case "$a" in y|Y|yes) return 0;; esac; return 1; }
+which_server() {
+    v=$({ X -version || Xorg -version; } 2>&1 | head -n 20)
+    case "$v" in *XLibre*|*xlibre*) echo XLibre;; *X.Org*|*"X Server"*) echo X.Org;; *) echo none;; esac
+}
+pkg_has() { pacman -Si "$1" >/dev/null 2>&1; }          # in a configured repository
+aur_helper() { for h in paru yay; do command -v "$h" >/dev/null 2>&1 && { echo "$h"; return; }; done; return 1; }
+# the X driver packages this machine has, as XLibre names them (xf86-input-libinput → xlibre-input-libinput)
+drivers() { pacman -Qq 2>/dev/null | grep -E '^xf86-(input|video)-' | sed 's/^xf86-/xlibre-/'; }
+
+cmd=${1:-status}
+command -v pacman >/dev/null 2>&1 || { say "This helper is for Arch Linux (pacman)."; exit 2; }
+now=$(which_server)
+case "$cmd" in
+status)
+    say "X server: $now"
+    [ "$now" = XLibre ] || say "To switch to XLibre: samurai-xserver xlibre"
+    exit 0;;
+xlibre)
+    if [ "$now" = XLibre ]; then say "XLibre already runs this machine. Nothing to do."; exit 0; fi
+    say "Switching the X server to XLibre"
+    say ""
+    say "This replaces the X.Org server packages (xorg-server, xorg-server-common and the xf86-*"
+    say "drivers) with their XLibre versions. Samurai, your apps and your settings stay as they are."
+    say "The change takes effect the next time X starts (log out, or restart)."
+    say "If X does not start afterwards, the login falls back to a text login; switch back with:"
+    say "    samurai-xserver xorg"
+    say ""
+    extra=$(drivers | tr '\n' ' ')
+    if pkg_has xlibre-xserver; then
+        # a repository that carries XLibre is already set up in pacman.conf
+        set -- xlibre-xserver $extra
+        say "A pacman repository with XLibre is set up. The plan:"
+        say "    sudo pacman -S $*"
+        say "(pacman will list what it replaces and ask you to confirm.)"
+        ask "Go ahead?" || { say "Nothing was changed."; exit 0; }
+        exec sudo pacman -S "$@"
+    elif h=$(aur_helper); then
+        set -- xlibre-xserver $extra
+        say "No pacman repository with XLibre is set up, but $h (an AUR helper) is installed."
+        say "XLibre's AUR packages are built on this machine. The plan:"
+        say "    $h -S $*"
+        say "The first build can need XLibre's documented bootstrap order (see"
+        say "https://aur.archlinux.org/packages/xlibre-xserver). If $h stops, nothing is replaced."
+        ask "Go ahead?" || { say "Nothing was changed."; exit 0; }
+        exec "$h" -S "$@"
+    else
+        say "Neither a pacman repository with XLibre nor an AUR helper (paru, yay) was found, so"
+        say "nothing can be installed from here. Two ways:"
+        say "  1. Add XLibre's own Arch repository (with its signing key) as its project describes:"
+        say "     https://x11libre.net  — then run this again."
+        say "  2. Install an AUR helper (paru or yay), then run this again."
+        say "Samurai does not add repositories or keys on its own."
+        say "Nothing was changed."
+        exit 1
+    fi;;
+xorg)
+    if [ "$now" = X.Org ]; then say "X.Org already runs this machine. Nothing to do."; exit 0; fi
+    set -- xorg-server xorg-server-common $(pacman -Qq 2>/dev/null | grep -E '^xlibre-(input|video)-' | sed 's/^xlibre-/xf86-/' | sed 's/-bin$//' | tr '\n' ' ')
+    say "Switching the X server back to X.Org. The plan:"
+    say "    sudo pacman -S $*"
+    say "(pacman will list what it replaces and ask you to confirm.)"
+    ask "Go ahead?" || { say "Nothing was changed."; exit 0; }
+    exec sudo pacman -S "$@";;
+*)
+    say "usage: samurai-xserver [status|xlibre|xorg]"; exit 2;;
+esac

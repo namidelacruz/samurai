@@ -1,0 +1,19 @@
+[package]
+name = "samurai-wm"
+version = "0.1.0"
+edition = "2021"
+description = "Samurai: an X11 window manager that composites its own screen. No taskbar, no workspaces: Super opens the overview."
+license = "MIT"
+
+[[bin]]
+name = "samurai-wm"
+path = "src/main.rs"
+
+[dependencies]
+x11rb = { version = "0.13", features = ["composite", "damage", "render", "xfixes", "shape", "randr", "screensaver", "dpms", "cursor", "resource_manager"] }
+resvg = "0.45"
+fontdue = "0.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+libc = "0.2"

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["samurai", "services/core", "services/lua", "services/niri"]
+members = ["samurai", "wm", "services/core"]
 
 [profile.release]
 opt-level = 3

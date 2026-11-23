@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Settings
+GenericName=Samurai Settings
+Comment=Every setting of the Samurai desktop
+Exec=/opt/samurai/bin/samurai-settings
+Icon=preferences-system
+Type=Application
+Categories=Settings;
+OnlyShowIn=Samurai;

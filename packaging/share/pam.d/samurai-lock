@@ -1,0 +1,4 @@
+#%PAM-1.0
+# The Samurai lock screen checks your password with this (installed by Samurai).
+auth      include   system-auth
+account   include   system-auth

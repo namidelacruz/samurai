@@ -1,0 +1,926 @@
+{
+ "version": 2,
+ "pages": [
+  {
+   "id": "look",
+   "title": "Look",
+   "icon": "ink",
+   "lead": "Night or paper, one accent, your ink. Everything here changes at once.",
+   "custom": "look",
+   "sections": [
+    {
+     "title": "Ground",
+     "items": [
+      {
+       "key": "look.ground",
+       "label": "Ground",
+       "type": "enum",
+       "default": "sun",
+       "options": [
+        {
+         "value": "night",
+         "label": "Night"
+        },
+        {
+         "value": "paper",
+         "label": "Paper"
+        },
+        {
+         "value": "sun",
+         "label": "Follow the sun"
+        }
+       ],
+       "help": "Follow the sun: paper during the day, night after dark (the times below)."
+      },
+      {
+       "key": "look.sun_from",
+       "label": "Paper from",
+       "type": "text",
+       "default": "07:30",
+       "help": "When the paper ground starts, as HH:MM.",
+       "pattern": "^([01]?\\d|2[0-3]):[0-5]\\d$"
+      },
+      {
+       "key": "look.sun_to",
+       "label": "Night from",
+       "type": "text",
+       "default": "18:00",
+       "help": "When the night ground starts, as HH:MM.",
+       "pattern": "^([01]?\\d|2[0-3]):[0-5]\\d$"
+      },
+      {
+       "key": "look.accent",
+       "label": "Accent",
+       "type": "enum",
+       "default": "indigo",
+       "options": [
+        {
+         "value": "indigo",
+         "label": "Indigo"
+        },
+        {
+         "value": "moss",
+         "label": "Moss"
+        },
+        {
+         "value": "rust",
+         "label": "Rust"
+        },
+        {
+         "value": "plum",
+         "label": "Plum"
+        },
+        {
+         "value": "slate",
+         "label": "Slate"
+        }
+       ],
+       "help": "Used for focus, selection and the ink in the wallpaper."
+      }
+     ]
+    },
+    {
+     "title": "Size and motion",
+     "items": [
+      {
+       "key": "look.scale",
+       "label": "Text and interface size",
+       "type": "float",
+       "default": 1.0,
+       "min": 1.0,
+       "max": 2.5,
+       "step": 0.25,
+       "unit": "×",
+       "help": "One size for every app, old and new. 1.5 suits a 14\" 2.5K screen."
+      },
+      {
+       "key": "look.motion",
+       "label": "Motion",
+       "type": "enum",
+       "default": "gentle",
+       "options": [
+        {
+         "value": "full",
+         "label": "Full"
+        },
+        {
+         "value": "gentle",
+         "label": "Gentle"
+        },
+        {
+         "value": "off",
+         "label": "Off"
+        }
+       ],
+       "help": "Gentle: quick and short. Off: everything just appears."
+      },
+      {
+       "key": "look.corners",
+       "label": "Window corners",
+       "type": "enum",
+       "default": "rounded",
+       "options": [
+        {
+         "value": "rounded",
+         "label": "Rounded"
+        },
+        {
+         "value": "square",
+         "label": "Square"
+        }
+       ],
+       "help": ""
+      }
+     ]
+    },
+    {
+     "title": "On the desktop",
+     "items": [
+      {
+       "key": "look.show_clock",
+       "label": "Time in the corner",
+       "type": "toggle",
+       "default": true,
+       "help": "A small pill, top right. It hides while a window covers it."
+      },
+      {
+       "key": "look.show_mark",
+       "label": "This machine's mark",
+       "type": "toggle",
+       "default": true,
+       "help": "The mark of your one-time ink, bottom left."
+      }
+     ]
+    },
+    {
+     "title": "Terminal",
+     "items": [
+      {
+       "key": "term.follow",
+       "label": "Terminal colours follow the ground",
+       "type": "toggle",
+       "default": true,
+       "help": ""
+      },
+      {
+       "key": "term.size",
+       "label": "Terminal text size",
+       "type": "float",
+       "default": 11.0,
+       "min": 7.0,
+       "max": 24.0,
+       "step": 0.5,
+       "unit": "pt",
+       "help": ""
+      },
+      {
+       "key": "term.prompt",
+       "label": "Samurai prompt in bash and zsh",
+       "type": "toggle",
+       "default": true,
+       "help": "Folder, git branch and changes, time taken, and the error code only when a command failed."
+      },
+      {
+       "key": "term.padding",
+       "label": "Space around the text",
+       "type": "int",
+       "default": 18,
+       "min": 0,
+       "max": 48,
+       "step": 2,
+       "unit": "px",
+       "help": ""
+      }
+     ]
+    },
+    {
+     "title": "Fonts",
+     "items": [
+      {
+       "key": "look.ui_font",
+       "label": "Interface font",
+       "type": "text",
+       "default": "Inter",
+       "help": ""
+      },
+      {
+       "key": "look.mono_font",
+       "label": "Monospace font",
+       "type": "text",
+       "default": "JetBrains Mono",
+       "help": ""
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "displays",
+   "title": "Displays",
+   "icon": "display",
+   "lead": "Screens, their sizes and where they sit. Night light.",
+   "custom": "displays",
+   "sections": [
+    {
+     "title": "Screens",
+     "items": [
+      {
+       "key": "displays.monitors",
+       "label": "Fixed settings per screen",
+       "type": "list",
+       "default": [],
+       "columns": [
+        "output",
+        "mode",
+        "position",
+        "rotate",
+        "primary"
+       ],
+       "example": "HDMI-1 · 1920x1080@60 · right-of eDP-1 · normal · no",
+       "help": "Screens without a line use their best mode, placed left to right."
+      },
+      {
+       "key": "displays.mirror_new",
+       "label": "Mirror a new screen until it is arranged",
+       "type": "toggle",
+       "default": false,
+       "help": ""
+      }
+     ]
+    },
+    {
+     "title": "Night light",
+     "items": [
+      {
+       "key": "night.enabled",
+       "label": "Night light",
+       "type": "toggle",
+       "default": false,
+       "help": "Warmer colours in the evening."
+      },
+      {
+       "key": "night.temp",
+       "label": "Evening warmth",
+       "type": "int",
+       "default": 4000,
+       "min": 2500,
+       "max": 6000,
+       "step": 100,
+       "unit": "K",
+       "help": ""
+      },
+      {
+       "key": "night.from",
+       "label": "From",
+       "type": "text",
+       "default": "20:00",
+       "help": "",
+       "pattern": "^([01]?\\d|2[0-3]):[0-5]\\d$"
+      },
+      {
+       "key": "night.to",
+       "label": "Until",
+       "type": "text",
+       "default": "07:00",
+       "help": "",
+       "pattern": "^([01]?\\d|2[0-3]):[0-5]\\d$"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "network",
+   "title": "Network",
+   "icon": "wifi",
+   "lead": "Wi-Fi, campus networks, wired and VPN. Changes apply at once.",
+   "custom": "network",
+   "sections": [
+    {
+     "title": "Wi-Fi",
+     "items": [
+      {
+       "key": "net.repair_after_update",
+       "label": "Repair campus Wi-Fi after system updates",
+       "type": "toggle",
+       "default": true,
+       "help": "Checks UC-Secure and eduroam once after each update and fixes the certificate if needed."
+      },
+      {
+       "key": "net.powersave",
+       "label": "Wi-Fi power saving",
+       "type": "toggle",
+       "default": true,
+       "help": "Off can help a connection that keeps dropping."
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "sound",
+   "title": "Sound",
+   "icon": "sound",
+   "lead": "Where sound goes, where it comes from, and how loud.",
+   "custom": "sound",
+   "sections": [
+    {
+     "title": "Volume",
+     "items": [
+      {
+       "key": "sound.max",
+       "label": "Loudest volume",
+       "type": "enum",
+       "default": "100",
+       "options": [
+        {
+         "value": "100",
+         "label": "100%"
+        },
+        {
+         "value": "150",
+         "label": "150% (may distort)"
+        }
+       ],
+       "help": ""
+      },
+      {
+       "key": "sound.step",
+       "label": "Volume keys change it by",
+       "type": "int",
+       "default": 5,
+       "min": 1,
+       "max": 20,
+       "step": 1,
+       "unit": "%",
+       "help": ""
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "keyboard",
+   "title": "Keyboard & shortcuts",
+   "icon": "keyboard",
+   "lead": "Layout, repeat, and every shortcut. Tap Super alone for the overview.",
+   "custom": "keyboard",
+   "sections": [
+    {
+     "title": "Typing",
+     "items": [
+      {
+       "key": "kbd.layout",
+       "label": "Layout",
+       "type": "text",
+       "default": "us",
+       "help": "One or more, comma separated: us,ca"
+      },
+      {
+       "key": "kbd.variant",
+       "label": "Variant",
+       "type": "text",
+       "default": "",
+       "help": "Empty for the usual one; e.g. colemak, dvorak, intl."
+      },
+      {
+       "key": "kbd.options",
+       "label": "Extra options",
+       "type": "text",
+       "default": "",
+       "help": "xkb options, e.g. caps:escape or grp:alt_shift_toggle"
+      },
+      {
+       "key": "kbd.delay",
+       "label": "Repeat starts after",
+       "type": "int",
+       "default": 300,
+       "min": 150,
+       "max": 1000,
+       "step": 25,
+       "unit": "ms",
+       "help": ""
+      },
+      {
+       "key": "kbd.rate",
+       "label": "Repeats per second",
+       "type": "int",
+       "default": 30,
+       "min": 5,
+       "max": 80,
+       "step": 1,
+       "unit": "",
+       "help": ""
+      }
+     ]
+    },
+    {
+     "title": "Shortcuts",
+     "items": [
+      {
+       "key": "keys.custom",
+       "label": "Your shortcuts",
+       "type": "list",
+       "default": [],
+       "columns": [
+        "keys",
+        "action"
+       ],
+       "example": "Super+T · spawn alacritty -e htop",
+       "help": "A line here replaces the built-in shortcut on the same keys. Action \"none\" turns a built-in one off."
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "mouse",
+   "title": "Mouse & touchpad",
+   "icon": "mouse",
+   "lead": "Speed, scrolling, tapping, and how windows take focus.",
+   "custom": null,
+   "sections": [
+    {
+     "title": "Pointer",
+     "items": [
+      {
+       "key": "mouse.speed",
+       "label": "Speed",
+       "type": "float",
+       "default": 0.0,
+       "min": -1.0,
+       "max": 1.0,
+       "step": 0.1,
+       "unit": "",
+       "help": "0 is the device's own speed."
+      },
+      {
+       "key": "mouse.natural",
+       "label": "Natural scrolling",
+       "type": "toggle",
+       "default": false,
+       "help": "Content moves with your fingers."
+      },
+      {
+       "key": "mouse.left_handed",
+       "label": "Left-handed buttons",
+       "type": "toggle",
+       "default": false,
+       "help": ""
+      },
+      {
+       "key": "mouse.cursor",
+       "label": "Cursor size",
+       "type": "enum",
+       "default": "24",
+       "options": [
+        {
+         "value": "24",
+         "label": "Normal"
+        },
+        {
+         "value": "32",
+         "label": "Large"
+        },
+        {
+         "value": "48",
+         "label": "Larger"
+        }
+       ],
+       "help": ""
+      }
+     ]
+    },
+    {
+     "title": "Touchpad",
+     "items": [
+      {
+       "key": "touch.tap",
+       "label": "Tap to click",
+       "type": "toggle",
+       "default": true,
+       "help": ""
+      },
+      {
+       "key": "touch.dwt",
+       "label": "Ignore the touchpad while typing",
+       "type": "toggle",
+       "default": true,
+       "help": ""
+      },
+      {
+       "key": "touch.natural",
+       "label": "Natural scrolling on the touchpad",
+       "type": "toggle",
+       "default": true,
+       "help": ""
+      }
+     ]
+    },
+    {
+     "title": "Windows",
+     "items": [
+      {
+       "key": "windows.focus",
+       "label": "A window takes focus",
+       "type": "enum",
+       "default": "click",
+       "options": [
+        {
+         "value": "click",
+         "label": "when clicked"
+        },
+        {
+         "value": "hover",
+         "label": "when the pointer is over it"
+        }
+       ],
+       "help": ""
+      },
+      {
+       "key": "windows.snap",
+       "label": "Drag to an edge to snap",
+       "type": "toggle",
+       "default": true,
+       "help": "Sides make halves, corners make quarters, the top fills the screen."
+      },
+      {
+       "key": "windows.shake",
+       "label": "Shake a window to tuck the others away",
+       "type": "toggle",
+       "default": true,
+       "help": ""
+      },
+      {
+       "key": "windows.gap",
+       "label": "Gap around snapped windows",
+       "type": "int",
+       "default": 8,
+       "min": 0,
+       "max": 40,
+       "step": 2,
+       "unit": "px",
+       "help": ""
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "apps",
+   "title": "Apps",
+   "icon": "apps",
+   "lead": "Which app opens what, and making older apps look and behave like the rest.",
+   "custom": "apps",
+   "sections": [
+    {
+     "title": "Opens with",
+     "items": [
+      {
+       "key": "apps.browser",
+       "label": "Web pages",
+       "type": "text",
+       "default": "firefox.desktop",
+       "help": ""
+      },
+      {
+       "key": "apps.files",
+       "label": "Folders",
+       "type": "text",
+       "default": "thunar.desktop",
+       "help": ""
+      },
+      {
+       "key": "apps.editor",
+       "label": "Text files",
+       "type": "text",
+       "default": "org.xfce.mousepad.desktop",
+       "help": ""
+      },
+      {
+       "key": "apps.images",
+       "label": "Images",
+       "type": "text",
+       "default": "imv.desktop",
+       "help": ""
+      },
+      {
+       "key": "apps.pdf",
+       "label": "PDFs",
+       "type": "text",
+       "default": "org.pwmt.zathura.desktop",
+       "help": ""
+      },
+      {
+       "key": "apps.video",
+       "label": "Video",
+       "type": "text",
+       "default": "mpv.desktop",
+       "help": ""
+      },
+      {
+       "key": "apps.music",
+       "label": "Music",
+       "type": "text",
+       "default": "mpv.desktop",
+       "help": ""
+      },
+      {
+       "key": "apps.mail",
+       "label": "Email links",
+       "type": "text",
+       "default": "org.mozilla.Thunderbird.desktop",
+       "help": ""
+      }
+     ]
+    },
+    {
+     "title": "Make every app match",
+     "items": [
+      {
+       "key": "apps.gtk",
+       "label": "GTK apps follow night and paper",
+       "type": "toggle",
+       "default": true,
+       "help": "Firefox, Thunar, GIMP and most others."
+      },
+      {
+       "key": "apps.qt",
+       "label": "Qt apps follow night and paper",
+       "type": "toggle",
+       "default": true,
+       "help": "KDE apps, VLC, OBS."
+      },
+      {
+       "key": "apps.fonts",
+       "label": "One font for every app",
+       "type": "toggle",
+       "default": true,
+       "help": ""
+      },
+      {
+       "key": "apps.cursor",
+       "label": "One cursor for every app",
+       "type": "toggle",
+       "default": true,
+       "help": ""
+      }
+     ]
+    },
+    {
+     "title": "When apps misbehave",
+     "items": [
+      {
+       "key": "windows.strip_follows_app",
+       "label": "Title strip takes the app's own colour",
+       "type": "toggle",
+       "default": true,
+       "help": "A terminal's strip is the terminal's background."
+      },
+      {
+       "key": "windows.unredirect",
+       "label": "No tearing in full-screen video and games",
+       "type": "toggle",
+       "default": true,
+       "help": "A full-screen app gets the screen directly."
+      },
+      {
+       "key": "windows.remember",
+       "label": "Remember where windows were",
+       "type": "toggle",
+       "default": true,
+       "help": ""
+      }
+     ]
+    },
+    {
+     "title": "In the overview",
+     "items": [
+      {
+       "key": "apps.pinned",
+       "label": "Pinned apps",
+       "type": "list",
+       "default": [],
+       "columns": [
+        "app"
+       ],
+       "example": "firefox",
+       "help": "The row under the search field."
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "power",
+   "title": "Power",
+   "icon": "plug",
+   "lead": "Locking, the screen going dark, and sleep.",
+   "custom": null,
+   "sections": [
+    {
+     "title": "When idle",
+     "items": [
+      {
+       "key": "idle.lock",
+       "label": "Lock after",
+       "type": "int",
+       "default": 10,
+       "min": 0,
+       "max": 120,
+       "step": 1,
+       "unit": "min",
+       "help": "0 never locks by itself."
+      },
+      {
+       "key": "idle.screen_off",
+       "label": "Screen off after",
+       "type": "int",
+       "default": 15,
+       "min": 0,
+       "max": 120,
+       "step": 1,
+       "unit": "min",
+       "help": ""
+      },
+      {
+       "key": "idle.suspend",
+       "label": "Sleep after",
+       "type": "int",
+       "default": 0,
+       "min": 0,
+       "max": 240,
+       "step": 5,
+       "unit": "min",
+       "help": "0 never sleeps by itself."
+      }
+     ]
+    },
+    {
+     "title": "Lock",
+     "items": [
+      {
+       "key": "lock.on_sleep",
+       "label": "Lock before the machine sleeps",
+       "type": "toggle",
+       "default": true,
+       "help": "Also when the lid closes."
+      },
+      {
+       "key": "lock.hold_notices",
+       "label": "Hold notifications while locked",
+       "type": "toggle",
+       "default": true,
+       "help": ""
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "notices",
+   "title": "Notifications",
+   "icon": "bell",
+   "lead": "How notifications look, where they appear, and when they wait.",
+   "custom": null,
+   "sections": [
+    {
+     "title": "Notifications",
+     "items": [
+      {
+       "key": "notices.corner",
+       "label": "Appear",
+       "type": "enum",
+       "default": "top-right",
+       "options": [
+        {
+         "value": "top-right",
+         "label": "Top right"
+        },
+        {
+         "value": "top-center",
+         "label": "Top middle"
+        },
+        {
+         "value": "bottom-right",
+         "label": "Bottom right"
+        }
+       ],
+       "help": ""
+      },
+      {
+       "key": "notices.seconds",
+       "label": "Stay for",
+       "type": "int",
+       "default": 6,
+       "min": 2,
+       "max": 30,
+       "step": 1,
+       "unit": "s",
+       "help": "Urgent ones stay until you dismiss them."
+      },
+      {
+       "key": "notices.history",
+       "label": "Keep a history",
+       "type": "toggle",
+       "default": true,
+       "help": ""
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "system",
+   "title": "System & updates",
+   "icon": "info",
+   "lead": "Updates, the login screen, the X server, and what starts with you.",
+   "custom": "system",
+   "sections": [
+    {
+     "title": "Updates",
+     "items": [
+      {
+       "key": "updates.check",
+       "label": "Look for updates",
+       "type": "enum",
+       "default": "daily",
+       "options": [
+        {
+         "value": "off",
+         "label": "Never"
+        },
+        {
+         "value": "daily",
+         "label": "Every day"
+        },
+        {
+         "value": "weekly",
+         "label": "Every week"
+        }
+       ],
+       "help": ""
+      },
+      {
+       "key": "updates.repo",
+       "label": "Get Samurai from",
+       "type": "text",
+       "default": "https://github.com/namidelacruz/samurai.git",
+       "help": ""
+      }
+     ]
+    },
+    {
+     "title": "Starts with you",
+     "items": [
+      {
+       "key": "autostart",
+       "label": "Also start",
+       "type": "list",
+       "default": [],
+       "columns": [
+        "command"
+       ],
+       "example": "nextcloud --background",
+       "help": ""
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "actions": [
+  "overview",
+  "terminal",
+  "files",
+  "browser",
+  "settings",
+  "close",
+  "fill",
+  "fullscreen",
+  "restore",
+  "snap left",
+  "snap right",
+  "snap top-left",
+  "snap top-right",
+  "snap bottom-left",
+  "snap bottom-right",
+  "center",
+  "tuck",
+  "untuck",
+  "focus next",
+  "focus prev",
+  "lock",
+  "ground",
+  "screenshot area",
+  "screenshot screen",
+  "screenshot window",
+  "volume up",
+  "volume down",
+  "volume mute",
+  "brightness up",
+  "brightness down",
+  "spawn",
+  "none"
+ ]
+}

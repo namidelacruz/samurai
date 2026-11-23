@@ -1,0 +1,4 @@
+#!/bin/sh
+# Opens Samurai's settings.
+export QT_QUICK_CONTROLS_STYLE=Basic
+exec python3 /opt/samurai/settings/samurai_settings.py "$@"

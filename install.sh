@@ -1,82 +1,184 @@
 #!/bin/sh
-# Samurai installer. One status bar; every line of detail goes to the log.
-#   ./install.sh              install for this user, login screen included (greetd)
-#   ./install.sh --no-greeter leave the login screen as it is
-#   ./install.sh --keep-niri-config   do not make Samurai niri's default look
-#   ./install.sh --update     same steps, quieter wording (used by `samurai update install`)
-#   ./install.sh --uninstall  remove what the installer put in place (your settings stay)
-# It installs to /opt/samurai, links commands into /usr/local/bin, writes Samurai's niri config
-# under ~/.config/samurai/niri, and points niri's own ~/.config/niri/config.kdl at it, so every
-# niri session is Samurai (your old config.kdl is kept as config.kdl.before-samurai and
-# --uninstall puts it back). The login screen
-# step writes /etc/greetd/config.toml and makes greetd the login manager from the next boot; what
-# was there before is kept and --uninstall puts it back.
-# It never touches the bootloader, the initramfs or firmware settings.
+# Samurai installer (Arch Linux). One status line; every line of detail goes to the log.
+#
+#   curl -fsSL https://raw.githubusercontent.com/namidelacruz/samurai/main/install.sh | sh
+#   or, from a downloaded copy:  ./install.sh
+#
+#   ./install.sh                install everything: packages, the desktop, the login screen
+#   ./install.sh --no-greeter   leave the login screen as it is
+#   ./install.sh --no-packages  install no packages (you manage them yourself)
+#   ./install.sh --no-apps      skip the default apps (browser, files, editor, viewers, mail)
+#   ./install.sh --update       same steps, quieter wording (used by `samurai update install`)
+#   ./install.sh --uninstall    put back what was there before (your Samurai settings stay)
+#
+# It installs Samurai to /opt/samurai, links its commands into /usr/local/bin, adds "Samurai" to
+# the sessions list, and (unless --no-greeter) makes greetd with the Samurai login screen the login
+# manager from the next boot; the login manager it replaces is remembered and --uninstall puts it
+# back. Packages come only from the repositories pacman already uses; nothing is removed or
+# replaced, and an X server that is already there (X.Org or XLibre) is kept.
+# It never touches the bootloader, the initramfs, firmware settings or running services.
 set -u
-HERE=$(cd "$(dirname "$0")" && pwd)
+REPO=${SAMURAI_REPO:-https://github.com/namidelacruz/samurai.git}
+BRANCH=${SAMURAI_BRANCH:-main}
+
+# ── run from curl: fetch the source first, then run its own installer ─────────────────────────
+HERE=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
+if [ ! -f "$HERE/Cargo.toml" ] || [ ! -d "$HERE/wm" ]; then
+    SRC=${XDG_DATA_HOME:-$HOME/.local/share}/samurai/src
+    command -v git >/dev/null 2>&1 || {
+        echo " Samurai needs git to fetch its source: sudo pacman -S --needed git base-devel rust" >&2; exit 1; }
+    echo " fetching Samurai into $SRC …"
+    if [ -d "$SRC/.git" ]; then git -C "$SRC" fetch -q --depth 1 origin "$BRANCH" && git -C "$SRC" checkout -q -B "$BRANCH" FETCH_HEAD
+    else mkdir -p "$(dirname "$SRC")" && git clone -q --depth 1 -b "$BRANCH" "$REPO" "$SRC"; fi || {
+        echo " could not fetch $REPO" >&2; exit 1; }
+    # the piped script has no keyboard; the real installer gets the terminal back for passwords
+    if [ -r /dev/tty ] && [ -w /dev/tty ]; then exec sh "$SRC/install.sh" "$@" < /dev/tty; fi
+    exec sh "$SRC/install.sh" "$@"
+fi
+
 LOGDIR=${XDG_STATE_HOME:-$HOME/.local/state}/samurai
 LOG=$LOGDIR/install.log
 mkdir -p "$LOGDIR"; : > "$LOG"
-MODE=install; GREETER=1; NIRI_DEFAULT=1
+MODE=install; GREETER=1; PACKAGES=1; APPS=1
 for a in "$@"; do case "$a" in
-    --greeter) GREETER=1;; --no-greeter) GREETER=0;; --keep-niri-config) NIRI_DEFAULT=0;; --update) MODE=update;; --uninstall) MODE=uninstall;;
-    -h|--help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0;;
+    --greeter) GREETER=1;; --no-greeter) GREETER=0;; --no-packages) PACKAGES=0;; --no-apps) APPS=0;;
+    --update) MODE=update;; --uninstall) MODE=uninstall;;
+    -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0;;
     *) echo "install.sh: unknown option $a" >&2; exit 2;;
 esac; done
-NIRI_OWN=${XDG_CONFIG_HOME:-$HOME/.config}/niri/config.kdl
-NIRI_MARK="// samurai:default"
 # an update keeps the choices made at install time
-[ "$MODE" != update ] || { [ -f "$NIRI_OWN" ] && head -1 "$NIRI_OWN" | grep -qxF "$NIRI_MARK"; } || NIRI_DEFAULT=0
 [ "$MODE" != update ] || [ -f /etc/samurai/greeter.json ] || GREETER=0
 [ "$(id -u)" != 0 ] || { echo "Run install.sh as yourself, not as root: it asks for the password when it needs it." >&2; exit 1; }
-# root steps: sudo at a terminal, pkexec from the settings window
-if [ -t 0 ] && command -v sudo >/dev/null 2>&1; then AS_ROOT=sudo; elif command -v pkexec >/dev/null 2>&1; then AS_ROOT=pkexec; else AS_ROOT=sudo; fi
+if [ "$MODE" != uninstall ] && ! command -v pacman >/dev/null 2>&1; then
+    if [ $PACKAGES = 1 ]; then echo "Samurai's installer is for Arch Linux (pacman). Use --no-packages to install only Samurai." >&2; exit 2; fi
+fi
+# root steps: sudo when there is a terminal, pkexec from the settings window
+if [ -t 1 ] && command -v sudo >/dev/null 2>&1; then AS_ROOT=sudo; elif command -v pkexec >/dev/null 2>&1; then AS_ROOT=pkexec; else AS_ROOT=sudo; fi
 
-# ── the status bar: the only thing on screen ───────────────────────────────────────────────
-WIDTH=32; STEP=0; TOTAL=1
-bar() { # bar LABEL
+# ── the status line: the only thing on screen ─────────────────────────────────────────────────
+WIDTH=24; STEP=0; TOTAL=1
+TTY=0; [ -t 1 ] && TTY=1
+COLS=$( { stty size < /dev/tty | cut -d' ' -f2; } 2>/dev/null ); case "$COLS" in ''|*[!0-9]*) COLS=80;; esac; [ "$COLS" -ge 40 ] || COLS=80
+bar() { # bar LABEL [DETAIL]   one line: the bar, the step, and what it is doing right now
     fill=$((STEP * WIDTH / TOTAL)); i=0; b=""
-    while [ $i -lt $WIDTH ]; do if [ $i -lt $fill ]; then b="$b█"; else b="$b░"; fi; i=$((i + 1)); done
-    if [ -t 1 ]; then printf '\r\033[K 侍 %s %3d%%  %s' "$b" $((STEP * 100 / TOTAL)) "$1"
-    else printf ' %3d%%  %s\n' $((STEP * 100 / TOTAL)) "$1"; fi
+    while [ $i -lt $WIDTH ]; do if [ $i -lt $fill ]; then b="$b━"; else b="$b─"; fi; i=$((i + 1)); done
+    line=$(printf '%3d%%  %s%s' $((STEP * 100 / TOTAL)) "$1" "${2:+ · $2}")
+    if [ $TTY = 1 ]; then
+        room=$((COLS - WIDTH - 6)); [ $room -gt 10 ] || room=10
+        printf '\r\033[K 侍 %s %s' "$b" "$(printf '%s' "$line" | cut -c1-$room)"
+    else printf ' %s\n' "$line"; fi
 }
 fail() { # fail LABEL
-    [ -t 1 ] && printf '\r\033[K'
-    printf ' ✕ stopped at: %s\n   nothing after this step was changed. Detail: %s\n' "$1" "$LOG"
+    [ $TTY = 1 ] && printf '\r\033[K'
+    printf ' ✕ stopped at: %s\n' "$1"
+    tail -n 4 "$LOG" | sed 's/^/   │ /'
+    printf '   Nothing after this step was changed. Full detail: %s\n' "$LOG"
     exit 1
 }
-step() { # step LABEL COMMAND…   run one step, all output to the log
+step() { # step LABEL COMMAND…   run one step, all of its output to the log
     label=$1; shift
     bar "$label"
     printf '\n== %s\n' "$label" >> "$LOG"
     "$@" >> "$LOG" 2>&1 || fail "$label"
     STEP=$((STEP + 1))
 }
+watch() { # watch LABEL COMMAND…   like step, but the status line names the item being worked on
+    label=$1; shift
+    bar "$label"
+    printf '\n== %s\n' "$label" >> "$LOG"
+    rcf=$LOGDIR/.rc; echo 1 > "$rcf"
+    { "$@" 2>&1; echo $? > "$rcf"; } | while IFS= read -r l; do
+        printf '%s\n' "$l" >> "$LOG"
+        case "$l" in
+            *"installing "*|*"upgrading "*)
+                # pacman: "(12/40) installing alacritty"
+                n=$(printf '%s' "$l" | sed -n 's/.*(\s*\([0-9]*\)\/\([0-9]*\)).*/\1 of \2/p')
+                p=$(printf '%s' "$l" | sed -n 's/.*\(installing\|upgrading\) \([^ .]*\).*/\2/p')
+                [ -n "$p" ] && bar "$label" "${n:+$n: }$p";;
+            *" downloading"*) p=$(printf '%s' "$l" | sed -n 's/^ *\([^ ]*\) downloading.*/\1/p'); bar "$label" "downloading ${p%%-[0-9]*}";;
+            *"Compiling "*) p=$(printf '%s' "$l" | sed -n 's/.*Compiling \([^ ]*\) .*/\1/p'); bar "$label" "compiling $p";;
+            *"Downloaded "*) p=$(printf '%s' "$l" | sed -n 's/.*Downloaded \([^ ]*\) .*/\1/p'); bar "$label" "fetched $p";;
+            *"Finished "*) bar "$label" "linking";;
+            *"checking keys"*|*"checking package integrity"*|*"loading package files"*|*"checking for file conflicts"*)
+                bar "$label" "$(printf '%s' "$l" | sed 's/^[( 0-9/)]*//; s/\.\.\..*//')";;
+        esac
+    done
+    [ "$(cat "$rcf")" = 0 ] || fail "$label"
+    rm -f "$rcf"
+    STEP=$((STEP + 1))
+}
 
-# ── steps ──────────────────────────────────────────────────────────────────────────────────
-check_needs() {
-    miss=""
-    for c in cargo git; do command -v $c >/dev/null 2>&1 || miss="$miss $c"; done
-    [ -z "$miss" ] || { echo "missing build tools:$miss"; return 1; }
-    if command -v niri >/dev/null 2>&1; then echo "niri: $(niri --version 2>/dev/null)"
-    else echo "note: niri is not installed yet (Samurai needs niri 25.11 or newer; 26.04 for per-app blur)"; fi
-    command -v qs >/dev/null 2>&1 || command -v quickshell >/dev/null 2>&1 || echo "note: quickshell is not installed yet"
-    for c in nmcli wpctl brightnessctl grim slurp wl-copy gammastep; do command -v $c >/dev/null 2>&1 || echo "note: optional tool $c is not installed"; done
-    if command -v fc-list >/dev/null 2>&1; then
-        fc-list | grep -qi "IBM Plex Mono" || echo "note: font IBM Plex Mono is not installed (a fallback mono font will be used)"
-        fc-list | grep -qi "Noto Sans CJK JP\|Noto Sans JP" || echo "note: font Noto Sans CJK JP is not installed (kanji may use a fallback)"
+# ── what "everything" is ───────────────────────────────────────────────────────────────────────
+# the desktop itself and every feature it has
+CORE="xorg-xinit xorg-xauth xorg-xrandr xorg-xinput xorg-xset xorg-xsetroot xorg-xrdb
+      alacritty dunst libnotify xsettingsd xss-lock polkit-gnome gammastep maim xclip xdotool
+      networkmanager pipewire wireplumber brightnessctl playerctl
+      pyside6 adw-gtk-theme papirus-icon-theme qt5ct qt6ct
+      inter-font ttf-jetbrains-mono noto-fonts noto-fonts-cjk noto-fonts-emoji
+      xdg-desktop-portal xdg-desktop-portal-gtk xdg-utils xdg-user-dirs
+      gvfs udisks2 dbus"
+LOGIN="greetd"
+BUILD="git rust gcc pkgconf"
+APPS_LIST="firefox thunar thunar-volman tumbler mousepad imv zathura zathura-pdf-mupdf mpv thunderbird file-roller"
+
+# an X server, unless one is already there (X.Org or XLibre: both are kept as they are)
+xserver_pkgs() {
+    if pacman -Qq xorg-server >/dev/null 2>&1 || pacman -Qqs '^xlibre-(x)?server' >/dev/null 2>&1 || command -v Xorg >/dev/null 2>&1; then
+        echo ""
+    else
+        echo "xorg-server xf86-input-libinput"
     fi
+}
+# sound: pipewire's PulseAudio part only when PulseAudio itself is not installed (never replace it)
+sound_pkgs() { pacman -Qq pulseaudio >/dev/null 2>&1 && echo "" || echo "pipewire-pulse"; }
+
+plan_packages() { # writes the list to install and the notes for any pacman does not know
+    want="$BUILD $CORE $(xserver_pkgs) $(sound_pkgs)"
+    [ $GREETER = 0 ] || want="$want $LOGIN"
+    [ $APPS = 0 ] || want="$want $APPS_LIST"
+    : > "$LOGDIR/.pkgs"
+    for p in $want; do
+        pacman -Qq "$p" >/dev/null 2>&1 && continue
+        # something else already provides it (rustup gives rust, an XLibre driver gives xf86-…)
+        pacman -T "$p" >/dev/null 2>&1 && continue
+        if pacman -Si "$p" >/dev/null 2>&1; then echo "$p" >> "$LOGDIR/.pkgs"
+        else echo "note: package $p is not in your repositories; skipped"; fi
+    done
+    echo "to install: $(wc -l < "$LOGDIR/.pkgs") packages"
+    cat "$LOGDIR/.pkgs"
+    command -v cargo >/dev/null 2>&1 || grep -qx rust "$LOGDIR/.pkgs" || {
+        echo "cargo (Rust) is needed to build Samurai and pacman cannot install rust here"; return 1; }
+}
+install_packages() {
+    [ -s "$LOGDIR/.pkgs" ] || { echo "every package is already installed"; return 0; }
+    # --needed: never reinstall; no -y: the package lists are not refreshed (no partial upgrade)
+    # shellcheck disable=SC2046
+    $AS_ROOT pacman -S --needed --noconfirm $(cat "$LOGDIR/.pkgs") || {
+        echo "pacman could not install the packages. If it says a file was not found, your package"
+        echo "lists are old: run 'sudo pacman -Syu' once, then run this installer again."
+        return 1; }
+}
+check_needs() {
+    for c in cargo git; do command -v $c >/dev/null 2>&1 || { echo "missing: $c"; return 1; }; done
+    echo "X server: $( { X -version || Xorg -version; } 2>&1 | grep -m1 -i 'x server\|xlibre' || echo 'none yet')"
+    for c in xinit alacritty dunst xsettingsd xss-lock nmcli wpctl brightnessctl gammastep maim; do
+        command -v $c >/dev/null 2>&1 || echo "note: $c is not installed; its part of Samurai is off until it is"
+    done
+    python3 -c 'import PySide6.QtQuick' 2>/dev/null || echo "note: PySide6 is not installed: Settings and the login screen need it"
     return 0
 }
-build() { cd "$HERE" && cargo build --release --locked; }
+build() { cd "$HERE" && SAMURAI_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo local) cargo build --release --locked; }
 stage() { # everything is laid out in a staging folder first, then swapped in at once
-    S=$LOGDIR/stage; rm -rf "$S"; mkdir -p "$S/bin" "$S/share"
-    cp "$HERE/target/release/samurai" "$HERE/target/release/shadow" "$S/bin/" || return 1
+    S=$LOGDIR/stage; rm -rf "$S"; mkdir -p "$S/bin" "$S/share" "$S/greeter" "$S/settings"
+    for b in samurai samurai-wm shadow; do cp "$HERE/target/release/$b" "$S/bin/" || return 1; done
     cp "$HERE"/packaging/bin/* "$S/bin/" && chmod 0755 "$S/bin/"* || return 1
-    cp -r "$HERE/shell" "$S/shell" || return 1
-    cp "$HERE/packaging/share/"*.desktop "$S/share/" || return 1
+    cp "$HERE"/greeter/greeter.py "$HERE"/greeter/Greeter.qml "$S/greeter/" || return 1
+    cp -r "$HERE"/settings/qml "$HERE"/settings/samurai_settings.py "$HERE"/settings/schema.json "$HERE"/settings/settings-index.json "$S/settings/" || return 1
+    cp -r "$HERE"/packaging/share/. "$S/share/" || return 1
+    cp "$HERE"/settings/settings-index.json "$S/share/" || return 1   # the overview searches settings
     (cd "$HERE" && git rev-parse HEAD 2>/dev/null) > "$S/share/COMMIT" || true
-    "$S/bin/samurai" version && "$S/bin/samurai" schema > /dev/null
+    find "$S" -name __pycache__ -prune -exec rm -rf {} +
+    "$S/bin/samurai" version && "$S/bin/samurai" schema > /dev/null && "$S/bin/samurai-wm" --keys > /dev/null
 }
 place() {
     S=$LOGDIR/stage
@@ -85,106 +187,107 @@ place() {
         rm -rf /opt/samurai.new && mkdir -p /opt && cp -r "$1" /opt/samurai.new && chown -R root:root /opt/samurai.new
         [ ! -d /opt/samurai ] || { rm -rf /opt/samurai.old; mv /opt/samurai /opt/samurai.old; }
         mv /opt/samurai.new /opt/samurai
-        mkdir -p /usr/local/bin /usr/share/wayland-sessions /usr/share/applications
-        ln -sfn /opt/samurai/bin/samurai /usr/local/bin/samurai
+        mkdir -p /usr/local/bin /usr/share/xsessions /usr/share/applications
+        for b in samurai samurai-wm samurai-settings samurai-xserver; do ln -sfn /opt/samurai/bin/$b /usr/local/bin/$b; done
+        # a shadow command of your own is kept
         [ -e /usr/local/bin/shadow ] && [ ! -L /usr/local/bin/shadow ] || ln -sfn /opt/samurai/bin/shadow /usr/local/bin/shadow
-        install -m 0644 /opt/samurai/share/samurai.desktop /usr/share/wayland-sessions/samurai.desktop
-        install -m 0644 /opt/samurai/share/samurai-hub.desktop /usr/share/applications/samurai-hub.desktop
+        install -m 0644 /opt/samurai/share/samurai.desktop /usr/share/xsessions/samurai.desktop
+        install -m 0644 /opt/samurai/share/samurai-settings.desktop /usr/share/applications/samurai-settings.desktop
+        # the lock screen checks passwords with this; a file of your own is kept
+        if [ ! -f /etc/pam.d/samurai-lock ] || grep -q "installed by Samurai" /etc/pam.d/samurai-lock; then
+            install -m 0644 /opt/samurai/share/pam.d/samurai-lock /etc/pam.d/samurai-lock
+        fi
     ' sh "$S" && rm -rf "$S"
 }
+services() { # only enables (from the next boot); never starts or stops anything now
+    command -v systemctl >/dev/null 2>&1 || return 0
+    if systemctl list-unit-files NetworkManager.service >/dev/null 2>&1; then
+        other=""
+        for u in iwd systemd-networkd dhcpcd connman netctl wicd; do
+            systemctl is-enabled "$u.service" >/dev/null 2>&1 && other="$other $u"
+        done
+        if systemctl is-enabled NetworkManager.service >/dev/null 2>&1; then echo "NetworkManager: already on"
+        elif [ -n "$other" ]; then echo "note: NetworkManager was not turned on because$other already manages the network; Wi-Fi settings need NetworkManager"
+        else $AS_ROOT systemctl enable NetworkManager.service && echo "NetworkManager: on from the next boot"; fi
+    fi
+    return 0
+}
 user_files() {
-    mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/quickshell"
-    ln -sfn /opt/samurai/shell "${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/samurai"
-    /opt/samurai/bin/samurai apply && /opt/samurai/bin/samurai check
-}
-niri_default() { # niri's own config becomes one line that loads Samurai's; the old file is kept
-    root=${XDG_CONFIG_HOME:-$HOME/.config}/samurai/niri/config.kdl
-    [ -f "$root" ] || { echo "Samurai's niri config is missing: $root"; return 1; }
-    mkdir -p "$(dirname "$NIRI_OWN")"
-    if [ -f "$NIRI_OWN" ] && ! head -1 "$NIRI_OWN" | grep -qxF "$NIRI_MARK"; then
-        # keep the first original for good: never overwrite an earlier backup
-        if [ -f "$NIRI_OWN.before-samurai" ]; then cp -p "$NIRI_OWN" "$NIRI_OWN.before-samurai.$(date +%Y%m%d-%H%M%S)"
-        else cp -p "$NIRI_OWN" "$NIRI_OWN.before-samurai"; fi || return 1
-    fi
-    cat > "$NIRI_OWN.new" <<KDL
-$NIRI_MARK
-// niri loads the Samurai desktop from here. Written by Samurai's install.sh.
-// Settings: Mod+Comma. Your own KDL: $(dirname "$root")/user.kdl
-// Your previous config, if there was one, is config.kdl.before-samurai in this folder.
-// To go back: ./install.sh --uninstall, or copy that file over this one.
-include "$root"
-KDL
-    # niri judges the new file before it replaces the one in use
-    if command -v niri >/dev/null 2>&1 && ! niri validate -c "$NIRI_OWN.new"; then
-        rm -f "$NIRI_OWN.new"; echo "note: NIRI DEFAULT NOT SET: niri refused the new config.kdl, yours was left as it is"; return 0
-    fi
-    mv -f "$NIRI_OWN.new" "$NIRI_OWN" && echo "niri default: set ($NIRI_OWN)"
-}
-niri_restore() { # only if the file is still ours
-    [ -f "$NIRI_OWN" ] && head -1 "$NIRI_OWN" | grep -qxF "$NIRI_MARK" || return 0
-    if [ -f "$NIRI_OWN.before-samurai" ]; then mv -f "$NIRI_OWN.before-samurai" "$NIRI_OWN" && echo "niri default: your previous config.kdl is back"
-    else rm -f "$NIRI_OWN" && echo "niri default: removed (niri writes its stock config at next start)"; fi
+    xdg-user-dirs-update 2>/dev/null || true
+    /opt/samurai/bin/samurai apply
 }
 seal() { # the one-time seal (kept if this machine already has one) and the public decoy
     /opt/samurai/bin/samurai seal show | grep -q '"forged":true' || /opt/samurai/bin/samurai seal forge > /dev/null || return 1
     /opt/samurai/bin/samurai seal decoy
 }
-greeter() { # the login screen. A missing part is installed when the system has pacman or dnf;
-            # if it still cannot be set up, that is a note, not a failed install (exit 3 = part missing).
-    if ! command -v greetd >/dev/null 2>&1; then
-        if command -v pacman >/dev/null 2>&1; then $AS_ROOT pacman -S --needed --noconfirm greetd || true
-        elif command -v dnf >/dev/null 2>&1; then $AS_ROOT dnf install -y greetd || true
-        fi
-    fi
-    $AS_ROOT /opt/samurai/bin/samurai-greeter-setup "$(/opt/samurai/bin/samurai get greeter.base | tr -d '"')" "$(id -un)" && return 0
+greeter() { # exit 3 from the setup = a part is missing: a note, not a failed install
+    $AS_ROOT /opt/samurai/bin/samurai-greeter-setup "$(/opt/samurai/bin/samurai get look.ground 2>/dev/null | tr -d '"' | grep -x 'night\|paper' || echo night)" "$(id -un)" && return 0
     [ $? = 3 ] && { echo "note: LOGIN SCREEN NOT SET UP (see the line above); fix that and run ./install.sh again"; return 0; }
     return 1
 }
-reload() { # a running session picks the new version up; never fails the install
-    # niri reloads its config by itself; only the frame needs a restart, and only inside a Samurai session
-    # a running niri has already reloaded the config by itself; give it the frame as well
-    if [ -n "${NIRI_SOCKET:-}" ]; then
-        if pgrep -f "(qs|quickshell) -c samurai" >/dev/null 2>&1 || [ $NIRI_DEFAULT = 1 ]; then /opt/samurai/bin/samurai shell restart || true; fi
+reload() { # a running Samurai picks the new version up; never fails the install
+    if [ -n "${DISPLAY:-}" ] && [ "${XDG_CURRENT_DESKTOP:-}" = Samurai ]; then
+        /opt/samurai/bin/samurai apply >/dev/null 2>&1 || true
+        /opt/samurai/bin/samurai-wm msg restart >/dev/null 2>&1 || true
     fi
     return 0
 }
 remove() {
     $AS_ROOT sh -c '
         [ ! -x /opt/samurai/bin/samurai-greeter-setup ] || /opt/samurai/bin/samurai-greeter-setup --remove || true
-        rm -rf /opt/samurai /opt/samurai.old /opt/samurai.new /usr/share/wayland-sessions/samurai.desktop /usr/share/applications/samurai-hub.desktop
-        [ "$(readlink /usr/local/bin/samurai 2>/dev/null)" != /opt/samurai/bin/samurai ] || rm -f /usr/local/bin/samurai
-        [ "$(readlink /usr/local/bin/shadow 2>/dev/null)" != /opt/samurai/bin/shadow ] || rm -f /usr/local/bin/shadow
+        ! grep -q "installed by Samurai" /etc/pam.d/samurai-lock 2>/dev/null || rm -f /etc/pam.d/samurai-lock
+        rm -f /usr/share/xsessions/samurai.desktop /usr/share/applications/samurai-settings.desktop
+        for b in samurai samurai-wm samurai-settings samurai-xserver shadow; do
+            [ "$(readlink /usr/local/bin/$b 2>/dev/null)" != /opt/samurai/bin/$b ] || rm -f /usr/local/bin/$b
+        done
+        rm -rf /opt/samurai /opt/samurai.old /opt/samurai.new
     '
-    rm -f "${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/samurai"
-    niri_restore
+    # the app settings Samurai wrote (each carries its mark): the apps go back to their own defaults
+    cfg=${XDG_CONFIG_HOME:-$HOME/.config}
+    find "$cfg" -maxdepth 3 -type f -size -256k ! -path "$cfg/samurai/*" 2>/dev/null | while IFS= read -r f; do
+        head -n 3 "$f" 2>/dev/null | grep -q "samurai: written by Samurai" && rm -f "$f" && echo "removed $f"
+    done
+    for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+        [ -f "$rc" ] && grep -q "# samurai prompt" "$rc" && sed -i '/# samurai prompt$/d' "$rc" && echo "took the prompt out of $rc"
+    done
+    command -v gsettings >/dev/null 2>&1 && gsettings reset org.gnome.desktop.interface color-scheme 2>/dev/null
+    return 0
 }
 
 if [ "$MODE" = uninstall ]; then
-    TOTAL=1; step "removing" remove; bar "removed"; [ -t 1 ] && echo
-    echo " Your settings and your seal (~/.config/samurai) were left in place."
-    echo " Your previous niri config and login screen are back (the login screen from the next boot)."
+    TOTAL=1; step "removing Samurai" remove; bar "removed"; [ $TTY = 1 ] && echo
+    echo " Samurai is removed. Your previous login screen is back from the next boot."
+    echo " Apps use their own settings again. Packages were left installed; your Samurai settings and"
+    echo " seal are kept in ~/.config/samurai (delete that folder to forget them)."
     exit 0
 fi
-TOTAL=$((7 + GREETER + NIRI_DEFAULT))
+TOTAL=$((7 + 2 * PACKAGES + GREETER))
+# ask for the password once, before the status line starts
+if [ "$AS_ROOT" = sudo ] && [ $TTY = 1 ]; then
+    echo " Samurai needs your password once, to install packages and put files in /opt and /etc."
+    sudo -v || { echo " no password given: nothing was changed"; exit 1; }
+fi
+if [ $PACKAGES = 1 ]; then
+    step "working out which packages are missing" plan_packages
+    watch "installing packages (asks for your password)" install_packages
+fi
 step "checking this machine" check_needs
-step "building" build
+watch "building Samurai" build
 step "preparing files" stage
-step "installing (asks for your password once)" place
-step "writing the niri config" user_files
-[ $NIRI_DEFAULT = 0 ] || step "making Samurai niri's default" niri_default
+step "installing Samurai to /opt/samurai" place
+step "turning on the network service" services
+step "writing app settings and the terminal style" user_files
 step "forging this machine's seal" seal
-[ $GREETER = 0 ] || step "setting up the login screen (takes effect at the next boot)" greeter
+[ $GREETER = 0 ] || step "setting up the login screen" greeter
 step "finishing" reload
-bar "done"; [ -t 1 ] && echo
+bar "done"; [ $TTY = 1 ] && echo
+rm -f "$LOGDIR/.pkgs"
 NOTES=$(grep -c '^note:' "$LOG" || true)
 if [ "$MODE" = update ]; then echo " Samurai is up to date."; else
     echo " Samurai is installed. Log out and choose “Samurai” at the login screen."
-    if grep -q "^niri default: set" "$LOG"; then
-        echo " niri now loads Samurai by default."
-        [ ! -f "$NIRI_OWN.before-samurai" ] || echo " Your previous niri config is kept as $NIRI_OWN.before-samurai"
-    elif [ $NIRI_DEFAULT = 1 ]; then echo " ! niri's default was NOT changed: niri refused the new config (see the log)."; fi
     if grep -q "^login screen: set" "$LOG"; then echo " The Samurai login screen replaces your current one from the next boot."
     elif [ $GREETER = 1 ]; then echo " ! The login screen was NOT set up: $(grep -B1 '^note: LOGIN SCREEN' "$LOG" | head -1)"; fi
+    echo " X server: $(/opt/samurai/bin/samurai-xserver status | head -n1 | sed 's/^X server: //'). To try XLibre: samurai-xserver xlibre"
 fi
-[ "$NOTES" = 0 ] || echo " $NOTES notes about missing optional parts are in $LOG"
+[ "$NOTES" = 0 ] || { echo " $NOTES notes (parts skipped or left off):"; grep '^note:' "$LOG" | sed 's/^note: /   · /'; }
 exit 0

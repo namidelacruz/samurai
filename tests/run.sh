@@ -1,36 +1,34 @@
 #!/bin/sh
-# Every check that can run without niri, Quickshell or real hardware.
-#   tests/run.sh       needs: cargo, python3 with PySide6 (pip install PySide6-Essentials)
-# The generated niri config is checked by niri's own parser when one is at hand: a real `niri`
-# on PATH, or NIRI_VALIDATOR=/path/to/a program built from niri's niri-config crate that takes
-# a config path. Without either, that one check is reported as SKIPPED, not passed.
-set -e
-cd "$(dirname "$0")/.."
-echo "== rust tests";      cargo test --locked --quiet
-echo "== release build";   cargo build --release --locked --quiet
-T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
-export SAMURAI_CONFIG=$T/config SAMURAI_STATE=$T/state
-S=./target/release/samurai
-if command -v niri >/dev/null 2>&1; then echo "== niri config: checked by the installed niri"
-elif [ -n "${NIRI_VALIDATOR:-}" ]; then echo "== niri config: checked by niri's parser ($NIRI_VALIDATOR)"; PATH="$PWD/tests/bin:$PATH"
-else echo "== niri config: SKIPPED the parser check (no niri, no NIRI_VALIDATOR); braces and quotes only"; fi
-$S apply >/dev/null && $S check
-if command -v niri >/dev/null 2>&1; then
-    echo "== every niri-backed setting at its extremes: accepted, or refused and rolled back"
-    python3 tests/settings_sweep.py $S
-    echo "== a refused config never replaces a working one"
-    cp "$T/config/niri/generated.kdl" "$T/before.kdl"
-    printf 'layout { no-such-thing 1; }\n' > "$T/config/niri/user.kdl"   # the user's own file is broken …
-    $S apply | grep -q "warning: with your user.kdl" && echo "   user.kdl problem reported"
-    : > "$T/config/niri/user.kdl"
-fi
-echo "== seal: forged once, refused twice"
-$S seal forge >/dev/null && $S seal decoy >/dev/null
-! $S seal forge >/dev/null 2>&1
-echo "== shell scripts parse";  for f in install.sh packaging/bin/*; do sh -n "$f"; done
-echo "== QML render check (35 scenes, both grounds, incognito, every hub page)"
-SAMURAI_BINDS="$($S binds list)" SAMURAI_SEAL=$T/config/seal QT_QPA_PLATFORM=offscreen python3 tests/qml/render.py "$T/render" | tail -1
-unset SAMURAI_CONFIG SAMURAI_STATE
-echo "== QML wiring check (shell.qml and the greeter against stand-in Quickshell modules and a stand-in niri)"
-QT_QPA_PLATFORM=offscreen python3 tests/qml/wiring.py $S | tail -1
-echo "all checks passed (none of them is niri itself, Quickshell or hardware)"
+# Every automatic test that can run without real hardware. Parts whose tools are missing are
+# skipped and say so. Run from the source folder: sh tests/run.sh
+cd "$(dirname "$0")/.." || exit 1
+fails=0
+part() { printf '\n── %s\n' "$1"; }
+result() { if [ "$1" = 0 ]; then echo "   passed"; else echo "   FAILED"; fails=$((fails + 1)); fi; }
+
+part "Rust unit tests"
+cargo test --release -q 2>&1 | grep -E "test result|FAILED|panicked" ; result "$(cargo test --release -q >/dev/null 2>&1; echo $?)"
+
+part "shell scripts parse"
+rc=0; for f in install.sh packaging/bin/*; do sh -n "$f" || { echo "   $f"; rc=1; }; done; result $rc
+
+part "window manager in Xvfb"
+cargo build --release -q -p samurai-wm && python3 tests/wm_xvfb.py; result $?
+
+part "Settings pages render (offscreen)"
+if python3 -c 'import PySide6' 2>/dev/null; then QT_QPA_PLATFORM=offscreen python3 tests/settings_shots.py >/tmp/samurai-shots.log 2>&1; rc=$?; tail -n 2 /tmp/samurai-shots.log; result $rc
+else echo "   skip: PySide6 is not installed"; fi
+
+part "login screen against greetd's fakegreet"
+FG=${FAKEGREET:-$(command -v fakegreet || true)}
+if [ -n "$FG" ] && python3 -c 'import PySide6' 2>/dev/null; then
+    d=$(mktemp -d); here=$(pwd)
+    (cd "$d" && SAMURAI_GREETER_DONE="$d/done" "$FG" "python3 -u $here/tests/greeter_fake.py > $d/out 2>&1; echo \$? > $d/rc" >/dev/null 2>&1 &)
+    i=0; while [ ! -f "$d/rc" ] && [ $i -lt 60 ]; do sleep 0.5; i=$((i + 1)); done
+    pkill -f "^$FG" 2>/dev/null; pkill -x fakegreet 2>/dev/null
+    grep -v propagate "$d/out" 2>/dev/null | sed 's/^/ /'
+    rc=$(cat "$d/rc" 2>/dev/null || echo 1); [ -f "$d/done" ] || rc=1; rm -rf "$d"; result "$rc"
+else echo "   skip: set FAKEGREET=/path/to/fakegreet (built from greetd's source) to run this"; fi
+
+printf '\n%s\n' "$( [ $fails = 0 ] && echo 'all parts passed' || echo "$fails part(s) failed" )"
+[ $fails = 0 ]

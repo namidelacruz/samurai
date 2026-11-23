@@ -1,12 +1,18 @@
 #!/bin/sh
-# What greetd runs: the Samurai login screen (Quickshell inside a bare niri).
-# If that cannot start, or dies within a few seconds, greetd's own text login takes over, so a
-# broken graphical greeter can never lock you out.
+# What greetd runs as its greeter user: the Samurai login screen in its own X server.
+# If it cannot start or dies at once, greetd's text login takes over, so a broken graphical login
+# can never lock you out.
 LOG=/tmp/samurai-greeter.$(id -u).log
+export SAMURAI_GREETER_DONE=/tmp/samurai-greeter.$(id -u).done
+rm -f "$SAMURAI_GREETER_DONE"
 start=$(date +%s)
-if command -v niri >/dev/null 2>&1 && [ -f /etc/samurai/greeter-niri.kdl ]; then
-    niri -c /etc/samurai/greeter-niri.kdl > "$LOG" 2>&1
+if [ -f /opt/samurai/greeter/greeter.py ] && python3 -c 'import PySide6' >/dev/null 2>&1; then
+    QT_QPA_PLATFORM=xcb QT_QUICK_CONTROLS_STYLE=Basic \
+        /opt/samurai/bin/samurai-x /usr/bin/python3 /opt/samurai/greeter/greeter.py > "$LOG" 2>&1
     rc=$?
+    # a login happened: greetd starts the session now
+    [ -f "$SAMURAI_GREETER_DONE" ] && { rm -f "$SAMURAI_GREETER_DONE"; exit 0; }
+    # it ran a while and then ended (restart, power off…): greetd shows it again
     [ $(( $(date +%s) - start )) -lt 8 ] || exit $rc
 fi
 echo "The Samurai login screen could not start (detail: $LOG). Text login:"

@@ -8,7 +8,7 @@
 use serde_json::{json, Map, Value};
 use std::path::PathBuf;
 
-pub const SCHEMA: &str = include_str!("../../shell/settings.schema.json");
+pub const SCHEMA: &str = include_str!("../../settings/schema.json");
 
 pub fn home() -> PathBuf {
     PathBuf::from(std::env::var_os("HOME").unwrap_or_else(|| "/".into()))
@@ -22,10 +22,6 @@ pub fn state_dir() -> PathBuf {
     std::env::var_os("SAMURAI_STATE").map(PathBuf::from).unwrap_or_else(|| {
         std::env::var_os("XDG_STATE_HOME").filter(|v| !v.is_empty()).map(PathBuf::from).unwrap_or_else(|| home().join(".local/state")).join("samurai")
     })
-}
-/// Samurai's own niri config folder (never ~/.config/niri)
-pub fn niri_dir() -> PathBuf {
-    std::env::var_os("SAMURAI_NIRI").map(PathBuf::from).unwrap_or_else(|| config_dir().join("niri"))
 }
 pub fn settings_file() -> PathBuf {
     config_dir().join("settings.json")
@@ -105,6 +101,12 @@ pub fn get_list(key: &str) -> Vec<Value> {
     get(key).as_array().cloned().unwrap_or_default()
 }
 
+/// HH:MM, 00:00 … 23:59 (the only pattern the schema uses)
+fn is_time(s: &str) -> bool {
+    let Some((h, m)) = s.split_once(':') else { return false };
+    h.len() <= 2 && m.len() == 2 && h.parse::<u32>().is_ok_and(|h| h < 24) && m.parse::<u32>().is_ok_and(|m| m < 60)
+}
+
 /// Is `v` an acceptable value for schema item `i`?
 pub fn check(i: &Value, v: &Value) -> Result<(), String> {
     let key = i["key"].as_str().unwrap_or("");
@@ -123,10 +125,12 @@ pub fn check(i: &Value, v: &Value) -> Result<(), String> {
             Ok(())
         }
         "enum" => {
-            let ok = i["options"].as_array().is_some_and(|o| o.contains(v));
-            ok.then_some(()).ok_or(format!("{key}: {v} is not one of {}", i["options"]))
+            let vals: Vec<Value> = i["options"].as_array().map(|o| o.iter().map(|x| x.get("value").cloned().unwrap_or(x.clone())).collect()).unwrap_or_default();
+            let names: Vec<String> = vals.iter().map(|v| v.as_str().unwrap_or("").to_string()).collect();
+            vals.contains(v).then_some(()).ok_or(format!("{key}: {v} is not one of {}", names.join(", ")))
         }
         "text" => match v.as_str() {
+            Some(s) if i.get("pattern").is_some() && !is_time(s) => bad(format!("\"{s}\" is not a time like 07:30")),
             Some(s) if s.len() <= 512 && !s.chars().any(|c| c.is_control()) => Ok(()),
             Some(_) => bad("too long, or holds control characters".into()),
             None => bad("needs text".into()),
@@ -216,24 +220,27 @@ mod t {
     #[test]
     fn the_schema_is_sound() {
         let its = items();
-        assert!(its.len() > 150, "every page's settings are there");
+        assert!(its.len() > 60, "every page's settings are there: {}", its.len());
         for (i, _) in &its {
             assert!(check(i, &i["default"]).is_ok(), "default of {} passes its own check", i["key"]);
+            assert!(!i["label"].as_str().unwrap_or("").is_empty(), "{} has a label", i["key"]);
         }
     }
 
     #[test]
     fn wrong_values_are_refused() {
-        let gaps = item("look.gaps_in").unwrap();
-        assert!(check(&gaps, &json!(8)).is_ok());
-        assert!(check(&gaps, &json!(8.5)).is_err());
-        assert!(check(&gaps, &json!(999)).is_err());
-        assert!(check(&gaps, &json!("8")).is_err());
-        assert!(check(&item("look.base").unwrap(), &json!("purple")).is_err());
-        assert!(check(&item("look.accent_own").unwrap(), &json!("red")).is_err());
-        let binds = item("binds.custom").unwrap();
-        assert!(check(&binds, &json!([{ "keys": "SUPER + T", "action": "spawn", "arg": "kitty" }])).is_ok());
-        assert!(check(&binds, &json!([{ "nope": "x" }])).is_err());
-        assert!(check(&binds, &json!([{ "arg": "a\nb" }])).is_err());
+        let gap = item("windows.gap").unwrap();
+        assert!(check(&gap, &json!(8)).is_ok());
+        assert!(check(&gap, &json!(8.5)).is_err());
+        assert!(check(&gap, &json!(999)).is_err());
+        assert!(check(&gap, &json!("8")).is_err());
+        assert!(check(&item("look.ground").unwrap(), &json!("purple")).is_err());
+        assert!(check(&item("look.ground").unwrap(), &json!("sun")).is_ok());
+        assert!(check(&item("look.sun_from").unwrap(), &json!("7:30")).is_ok());
+        assert!(check(&item("look.sun_from").unwrap(), &json!("25:00")).is_err());
+        let keys = item("keys.custom").unwrap();
+        assert!(check(&keys, &json!([{ "keys": "Super+T", "action": "spawn alacritty" }])).is_ok());
+        assert!(check(&keys, &json!([{ "nope": "x" }])).is_err());
+        assert!(check(&keys, &json!([{ "keys": "a\nb" }])).is_err());
     }
 }

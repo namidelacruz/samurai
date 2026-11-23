@@ -1,0 +1,442 @@
+[
+ {
+  "label": "Ground",
+  "page": "look",
+  "where": "Settings › Look"
+ },
+ {
+  "label": "Paper from",
+  "page": "look",
+  "where": "Settings › Look"
+ },
+ {
+  "label": "Night from",
+  "page": "look",
+  "where": "Settings › Look"
+ },
+ {
+  "label": "Accent",
+  "page": "look",
+  "where": "Settings › Look"
+ },
+ {
+  "label": "Text and interface size",
+  "page": "look",
+  "where": "Settings › Look"
+ },
+ {
+  "label": "Motion",
+  "page": "look",
+  "where": "Settings › Look"
+ },
+ {
+  "label": "Window corners",
+  "page": "look",
+  "where": "Settings › Look"
+ },
+ {
+  "label": "Time in the corner",
+  "page": "look",
+  "where": "Settings › Look"
+ },
+ {
+  "label": "This machine's mark",
+  "page": "look",
+  "where": "Settings › Look"
+ },
+ {
+  "label": "Terminal colours follow the ground",
+  "page": "look",
+  "where": "Settings › Look"
+ },
+ {
+  "label": "Terminal text size",
+  "page": "look",
+  "where": "Settings › Look"
+ },
+ {
+  "label": "Samurai prompt in bash and zsh",
+  "page": "look",
+  "where": "Settings › Look"
+ },
+ {
+  "label": "Space around the text",
+  "page": "look",
+  "where": "Settings › Look"
+ },
+ {
+  "label": "Interface font",
+  "page": "look",
+  "where": "Settings › Look"
+ },
+ {
+  "label": "Monospace font",
+  "page": "look",
+  "where": "Settings › Look"
+ },
+ {
+  "label": "Fixed settings per screen",
+  "page": "displays",
+  "where": "Settings › Displays"
+ },
+ {
+  "label": "Mirror a new screen until it is arranged",
+  "page": "displays",
+  "where": "Settings › Displays"
+ },
+ {
+  "label": "Night light",
+  "page": "displays",
+  "where": "Settings › Displays"
+ },
+ {
+  "label": "Evening warmth",
+  "page": "displays",
+  "where": "Settings › Displays"
+ },
+ {
+  "label": "From",
+  "page": "displays",
+  "where": "Settings › Displays"
+ },
+ {
+  "label": "Until",
+  "page": "displays",
+  "where": "Settings › Displays"
+ },
+ {
+  "label": "Repair campus Wi-Fi after system updates",
+  "page": "network",
+  "where": "Settings › Network"
+ },
+ {
+  "label": "Wi-Fi power saving",
+  "page": "network",
+  "where": "Settings › Network"
+ },
+ {
+  "label": "Loudest volume",
+  "page": "sound",
+  "where": "Settings › Sound"
+ },
+ {
+  "label": "Volume keys change it by",
+  "page": "sound",
+  "where": "Settings › Sound"
+ },
+ {
+  "label": "Layout",
+  "page": "keyboard",
+  "where": "Settings › Keyboard & shortcuts"
+ },
+ {
+  "label": "Variant",
+  "page": "keyboard",
+  "where": "Settings › Keyboard & shortcuts"
+ },
+ {
+  "label": "Extra options",
+  "page": "keyboard",
+  "where": "Settings › Keyboard & shortcuts"
+ },
+ {
+  "label": "Repeat starts after",
+  "page": "keyboard",
+  "where": "Settings › Keyboard & shortcuts"
+ },
+ {
+  "label": "Repeats per second",
+  "page": "keyboard",
+  "where": "Settings › Keyboard & shortcuts"
+ },
+ {
+  "label": "Your shortcuts",
+  "page": "keyboard",
+  "where": "Settings › Keyboard & shortcuts"
+ },
+ {
+  "label": "Speed",
+  "page": "mouse",
+  "where": "Settings › Mouse & touchpad"
+ },
+ {
+  "label": "Natural scrolling",
+  "page": "mouse",
+  "where": "Settings › Mouse & touchpad"
+ },
+ {
+  "label": "Left-handed buttons",
+  "page": "mouse",
+  "where": "Settings › Mouse & touchpad"
+ },
+ {
+  "label": "Cursor size",
+  "page": "mouse",
+  "where": "Settings › Mouse & touchpad"
+ },
+ {
+  "label": "Tap to click",
+  "page": "mouse",
+  "where": "Settings › Mouse & touchpad"
+ },
+ {
+  "label": "Ignore the touchpad while typing",
+  "page": "mouse",
+  "where": "Settings › Mouse & touchpad"
+ },
+ {
+  "label": "Natural scrolling on the touchpad",
+  "page": "mouse",
+  "where": "Settings › Mouse & touchpad"
+ },
+ {
+  "label": "A window takes focus",
+  "page": "mouse",
+  "where": "Settings › Mouse & touchpad"
+ },
+ {
+  "label": "Drag to an edge to snap",
+  "page": "mouse",
+  "where": "Settings › Mouse & touchpad"
+ },
+ {
+  "label": "Shake a window to tuck the others away",
+  "page": "mouse",
+  "where": "Settings › Mouse & touchpad"
+ },
+ {
+  "label": "Gap around snapped windows",
+  "page": "mouse",
+  "where": "Settings › Mouse & touchpad"
+ },
+ {
+  "label": "Web pages",
+  "page": "apps",
+  "where": "Settings › Apps"
+ },
+ {
+  "label": "Folders",
+  "page": "apps",
+  "where": "Settings › Apps"
+ },
+ {
+  "label": "Text files",
+  "page": "apps",
+  "where": "Settings › Apps"
+ },
+ {
+  "label": "Images",
+  "page": "apps",
+  "where": "Settings › Apps"
+ },
+ {
+  "label": "PDFs",
+  "page": "apps",
+  "where": "Settings › Apps"
+ },
+ {
+  "label": "Video",
+  "page": "apps",
+  "where": "Settings › Apps"
+ },
+ {
+  "label": "Music",
+  "page": "apps",
+  "where": "Settings › Apps"
+ },
+ {
+  "label": "Email links",
+  "page": "apps",
+  "where": "Settings › Apps"
+ },
+ {
+  "label": "GTK apps follow night and paper",
+  "page": "apps",
+  "where": "Settings › Apps"
+ },
+ {
+  "label": "Qt apps follow night and paper",
+  "page": "apps",
+  "where": "Settings › Apps"
+ },
+ {
+  "label": "One font for every app",
+  "page": "apps",
+  "where": "Settings › Apps"
+ },
+ {
+  "label": "One cursor for every app",
+  "page": "apps",
+  "where": "Settings › Apps"
+ },
+ {
+  "label": "Title strip takes the app's own colour",
+  "page": "apps",
+  "where": "Settings › Apps"
+ },
+ {
+  "label": "No tearing in full-screen video and games",
+  "page": "apps",
+  "where": "Settings › Apps"
+ },
+ {
+  "label": "Remember where windows were",
+  "page": "apps",
+  "where": "Settings › Apps"
+ },
+ {
+  "label": "Pinned apps",
+  "page": "apps",
+  "where": "Settings › Apps"
+ },
+ {
+  "label": "Lock after",
+  "page": "power",
+  "where": "Settings › Power"
+ },
+ {
+  "label": "Screen off after",
+  "page": "power",
+  "where": "Settings › Power"
+ },
+ {
+  "label": "Sleep after",
+  "page": "power",
+  "where": "Settings › Power"
+ },
+ {
+  "label": "Lock before the machine sleeps",
+  "page": "power",
+  "where": "Settings › Power"
+ },
+ {
+  "label": "Hold notifications while locked",
+  "page": "power",
+  "where": "Settings › Power"
+ },
+ {
+  "label": "Appear",
+  "page": "notices",
+  "where": "Settings › Notifications"
+ },
+ {
+  "label": "Stay for",
+  "page": "notices",
+  "where": "Settings › Notifications"
+ },
+ {
+  "label": "Keep a history",
+  "page": "notices",
+  "where": "Settings › Notifications"
+ },
+ {
+  "label": "Look for updates",
+  "page": "system",
+  "where": "Settings › System & updates"
+ },
+ {
+  "label": "Get Samurai from",
+  "page": "system",
+  "where": "Settings › System & updates"
+ },
+ {
+  "label": "Also start",
+  "page": "system",
+  "where": "Settings › System & updates"
+ },
+ {
+  "label": "Look",
+  "page": "look",
+  "where": "Settings"
+ },
+ {
+  "label": "Displays",
+  "page": "displays",
+  "where": "Settings"
+ },
+ {
+  "label": "Network",
+  "page": "network",
+  "where": "Settings"
+ },
+ {
+  "label": "Sound",
+  "page": "sound",
+  "where": "Settings"
+ },
+ {
+  "label": "Keyboard & shortcuts",
+  "page": "keyboard",
+  "where": "Settings"
+ },
+ {
+  "label": "Mouse & touchpad",
+  "page": "mouse",
+  "where": "Settings"
+ },
+ {
+  "label": "Apps",
+  "page": "apps",
+  "where": "Settings"
+ },
+ {
+  "label": "Power",
+  "page": "power",
+  "where": "Settings"
+ },
+ {
+  "label": "Notifications",
+  "page": "notices",
+  "where": "Settings"
+ },
+ {
+  "label": "System & updates",
+  "page": "system",
+  "where": "Settings"
+ },
+ {
+  "label": "UC-Secure",
+  "page": "network",
+  "where": "Settings › Network"
+ },
+ {
+  "label": "eduroam",
+  "page": "network",
+  "where": "Settings › Network"
+ },
+ {
+  "label": "Wi-Fi networks",
+  "page": "network",
+  "where": "Settings › Network"
+ },
+ {
+  "label": "Repair this connection",
+  "page": "network",
+  "where": "Settings › Network"
+ },
+ {
+  "label": "Wallpaper",
+  "page": "look",
+  "where": "Settings › Look"
+ },
+ {
+  "label": "Login screen",
+  "page": "system",
+  "where": "Settings › System & updates"
+ },
+ {
+  "label": "X server (X.Org / XLibre)",
+  "page": "system",
+  "where": "Settings › System & updates"
+ },
+ {
+  "label": "Output device",
+  "page": "sound",
+  "where": "Settings › Sound"
+ },
+ {
+  "label": "Microphone",
+  "page": "sound",
+  "where": "Settings › Sound"
+ }
+]

@@ -1,7 +1,0 @@
-[Desktop Entry]
-Name=Samurai Settings
-Comment=Every setting of the Samurai desktop
-Exec=samurai shell settings
-Icon=preferences-system
-Type=Application
-Categories=Settings;

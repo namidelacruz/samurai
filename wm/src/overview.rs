@@ -1,0 +1,926 @@
+//! The overview (Super): every open window laid out on the screen, search across windows,
+//! apps, settings and commands, the quick panel, and the shelf of tucked-away windows. It is the
+//! whole of Samurai's "shell": there is no taskbar and there are no workspaces.
+
+use crate::draw::{self, Face};
+use crate::status::{self, Snapshot};
+use crate::wm::{Rect, Wm};
+use crate::x;
+use std::collections::HashMap;
+use std::time::Instant;
+use x11rb::protocol::xproto::*;
+use x11rb::CURRENT_TIME;
+
+#[derive(Clone, Debug)]
+pub struct App {
+    pub id: String,
+    pub name: String,
+    pub exec: String,
+    pub terminal: bool,
+    pub keywords: String,
+    pub categories: String,
+}
+
+#[derive(Clone, Debug)]
+pub enum Act {
+    Window(Window),
+    App(usize),
+    Setting(String),
+    Run(String),
+    Copy(String),
+    Tile(&'static str),
+    Power(&'static str),
+    Settings,
+}
+
+#[derive(Clone, Debug)]
+pub struct Item {
+    pub group: &'static str,
+    pub icon: &'static str,
+    pub title: String,
+    pub sub: String,
+    pub act: Act,
+}
+
+#[derive(Clone, Debug)]
+pub enum Hot {
+    Card(Window),
+    Item(usize),
+    App(usize),
+    Tile(&'static str),
+    Slider(&'static str, Rect),
+    Power(&'static str),
+    Shelf(Window),
+    Settings,
+    Blank,
+}
+
+#[derive(Default)]
+pub struct Overview {
+    pub open: bool,
+    pub closing: bool,
+    pub start: Option<Instant>,
+    pub t: f32,
+    pub query: String,
+    pub sel: usize,
+    pub rects: HashMap<Window, Rect>,
+    pub order: Vec<Window>,
+    pub relayout: bool,
+    pub dirty: bool,
+    pub apps: Vec<App>,
+    pub settings_index: Vec<(String, String, String)>,
+    pub items: Vec<Item>,
+    pub hot: Vec<(Rect, Hot)>,
+    pub hover: Option<usize>,
+    pub mon: Rect,
+    pub snap: Snapshot,
+    pub drag_slider: Option<&'static str>,
+    pub zone: u8,
+}
+
+fn data_dirs() -> Vec<std::path::PathBuf> {
+    let mut v = vec![];
+    let home = crate::config::home();
+    v.push(std::env::var("XDG_DATA_HOME").map(std::path::PathBuf::from).unwrap_or_else(|_| home.join(".local/share")));
+    for d in std::env::var("XDG_DATA_DIRS").unwrap_or_else(|_| "/usr/local/share:/usr/share".into()).split(':') {
+        if !d.is_empty() {
+            v.push(d.into());
+        }
+    }
+    v
+}
+
+fn strip_codes(exec: &str) -> String {
+    let mut out = vec![];
+    for w in exec.split_whitespace() {
+        if w.len() == 2 && w.starts_with('%') {
+            continue;
+        }
+        out.push(w.replace("%%", "%"));
+    }
+    out.join(" ")
+}
+
+impl Overview {
+    pub fn load_apps(&mut self) {
+        let mut seen = std::collections::HashSet::new();
+        let mut apps = vec![];
+        for d in data_dirs() {
+            let Ok(rd) = std::fs::read_dir(d.join("applications")) else { continue };
+            let mut files: Vec<_> = rd.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "desktop")).collect();
+            files.sort();
+            for p in files {
+                let id = p.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+                if !seen.insert(id.clone()) {
+                    continue; // the user's own copy wins
+                }
+                let Ok(text) = std::fs::read_to_string(&p) else { continue };
+                let mut in_main = false;
+                let (mut name, mut exec, mut kw, mut cats) = (String::new(), String::new(), String::new(), String::new());
+                let (mut hidden, mut term, mut is_app) = (false, false, false);
+                for line in text.lines() {
+                    let l = line.trim();
+                    if l.starts_with('[') {
+                        in_main = l == "[Desktop Entry]";
+                        continue;
+                    }
+                    if !in_main {
+                        continue;
+                    }
+                    let Some((k, v)) = l.split_once('=') else { continue };
+                    match k.trim() {
+                        "Name" => name = v.trim().to_string(),
+                        "Exec" => exec = strip_codes(v.trim()),
+                        "Keywords" => kw = v.trim().to_string(),
+                        "Categories" => cats = v.trim().to_string(),
+                        "NoDisplay" | "Hidden" if v.trim() == "true" => hidden = true,
+                        "Terminal" => term = v.trim() == "true",
+                        "Type" => is_app = v.trim() == "Application",
+                        _ => {}
+                    }
+                }
+                if is_app && !hidden && !name.is_empty() && !exec.is_empty() {
+                    apps.push(App { id, name, exec, terminal: term, keywords: kw, categories: cats });
+                }
+            }
+        }
+        apps.sort_by_key(|a| a.name.to_lowercase());
+        self.apps = apps;
+        // the Settings app publishes what can be searched
+        self.settings_index.clear();
+        for p in [crate::config::config_dir().join("settings-index.json"), "/opt/samurai/share/settings-index.json".into()] {
+            if let Ok(t) = std::fs::read_to_string(&p) {
+                if let Ok(serde_json::Value::Array(a)) = serde_json::from_str::<serde_json::Value>(&t) {
+                    for e in a {
+                        let g = |k: &str| e.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                        self.settings_index.push((g("label"), g("page"), g("where")));
+                    }
+                }
+                break;
+            }
+        }
+    }
+}
+
+pub fn app_icon(a: &App) -> &'static str {
+    let s = format!("{} {} {}", a.id, a.name, a.categories).to_lowercase();
+    if s.contains("terminal") || s.contains("alacritty") { "terminal" }
+    else if s.contains("filemanager") || s.contains("thunar") || s.contains("files") { "folder" }
+    else if s.contains("webbrowser") || s.contains("firefox") || s.contains("chrom") { "globe" }
+    else if s.contains("texteditor") || s.contains("mousepad") || s.contains("editor") || s.contains("development") { "edit" }
+    else if s.contains("email") || s.contains("mail") || s.contains("thunderbird") { "mail" }
+    else if s.contains("audio") || s.contains("music") { "music" }
+    else if s.contains("video") || s.contains("mpv") || s.contains("player") { "video" }
+    else if s.contains("graphics") || s.contains("image") || s.contains("imv") || s.contains("photo") { "image" }
+    else if s.contains("settings") || s.contains("samurai-settings") { "settings" }
+    else if s.contains("office") || s.contains("pdf") || s.contains("zathura") { "doc" }
+    else if s.contains("calculator") { "calc" }
+    else { "apps" }
+}
+
+/// A small calculator for "= …": + - * / % ^ and brackets.
+pub fn calc(expr: &str) -> Option<f64> {
+    let toks: Vec<char> = expr.chars().filter(|c| !c.is_whitespace()).map(|c| if c == ',' { '.' } else if c == 'x' || c == '×' { '*' } else if c == '÷' { '/' } else { c }).collect();
+    let mut i = 0;
+    fn num(t: &[char], i: &mut usize) -> Option<f64> {
+        if *i < t.len() && t[*i] == '(' {
+            *i += 1;
+            let v = sum(t, i)?;
+            if *i < t.len() && t[*i] == ')' { *i += 1; }
+            return Some(v);
+        }
+        if *i < t.len() && t[*i] == '-' {
+            *i += 1;
+            return num(t, i).map(|v| -v);
+        }
+        let s = *i;
+        while *i < t.len() && (t[*i].is_ascii_digit() || t[*i] == '.') { *i += 1; }
+        t[s..*i].iter().collect::<String>().parse().ok()
+    }
+    fn pow(t: &[char], i: &mut usize) -> Option<f64> {
+        let b = num(t, i)?;
+        if *i < t.len() && t[*i] == '^' { *i += 1; return Some(b.powf(pow(t, i)?)); }
+        Some(b)
+    }
+    fn prod(t: &[char], i: &mut usize) -> Option<f64> {
+        let mut v = pow(t, i)?;
+        while *i < t.len() && matches!(t[*i], '*' | '/' | '%') {
+            let op = t[*i]; *i += 1;
+            let r = pow(t, i)?;
+            v = match op { '*' => v * r, '/' => v / r, _ => v % r };
+        }
+        Some(v)
+    }
+    fn sum(t: &[char], i: &mut usize) -> Option<f64> {
+        let mut v = prod(t, i)?;
+        while *i < t.len() && matches!(t[*i], '+' | '-') {
+            let op = t[*i]; *i += 1;
+            let r = prod(t, i)?;
+            v = if op == '+' { v + r } else { v - r };
+        }
+        Some(v)
+    }
+    let v = sum(&toks, &mut i)?;
+    if i != toks.len() || !v.is_finite() { None } else { Some(v) }
+}
+
+fn fmt_num(v: f64) -> String {
+    if (v - v.round()).abs() < 1e-9 && v.abs() < 1e15 { format!("{}", v.round() as i64) } else { format!("{:.6}", v).trim_end_matches('0').trim_end_matches('.').to_string() }
+}
+
+fn matches(hay: &str, q: &str) -> bool {
+    let h = hay.to_lowercase();
+    q.split_whitespace().all(|w| h.contains(w))
+}
+
+impl Wm {
+    pub fn overview_toggle(&mut self) {
+        if self.ov.open && !self.ov.closing { self.overview_close(None) } else { self.overview_open() }
+    }
+
+    pub fn overview_open(&mut self) {
+        if self.lock.locked || self.ov.open && !self.ov.closing {
+            return;
+        }
+        let grabbed = self.conn.grab_keyboard(false, self.root, CURRENT_TIME, GrabMode::ASYNC, GrabMode::ASYNC).ok().and_then(|r| r.reply().ok()).is_some_and(|r| r.status == GrabStatus::SUCCESS);
+        if !grabbed {
+            return;
+        }
+        self.conn.grab_pointer(false, self.root, EventMask::BUTTON_PRESS | EventMask::BUTTON_RELEASE | EventMask::POINTER_MOTION, GrabMode::ASYNC, GrabMode::ASYNC, x11rb::NONE, self.cursors.normal, CURRENT_TIME).ok();
+        self.ov.open = true;
+        self.ov.closing = false;
+        self.ov.start = Some(Instant::now());
+        self.ov.query.clear();
+        self.ov.sel = 0;
+        self.ov.zone = 0;
+        self.ov.mon = self.pointer_monitor();
+        self.ov.snap = self.status.get();
+        self.status.refresh();
+        self.overview_layout();
+        // start on the window you were in
+        if let Some(f) = self.focused.and_then(|f| self.client(f).map(|c| c.frame)) {
+            self.ov.sel = self.ov.order.iter().position(|w| *w == f).unwrap_or(0);
+        }
+        self.ov.dirty = true;
+    }
+
+    /// Close; `focus` is the window to bring forward as it closes.
+    pub fn overview_close(&mut self, focus: Option<Window>) {
+        if !self.ov.open || self.ov.closing {
+            return;
+        }
+        self.ov.closing = true;
+        self.ov.start = Some(Instant::now());
+        self.conn.ungrab_keyboard(CURRENT_TIME).ok();
+        self.conn.ungrab_pointer(CURRENT_TIME).ok();
+        if let Some(w) = focus {
+            self.focus(Some(w));
+            if let Some(f) = self.client(w).map(|c| c.frame) {
+                // the chosen window lands last, above the others
+                let r = self.ov.rects.remove(&f);
+                if let Some(r) = r { self.ov.rects.insert(f, r); }
+            }
+        }
+        self.ov.dirty = true;
+    }
+
+    /// Lay the windows of this monitor out as cards in the space left of the panel.
+    pub fn overview_layout(&mut self) {
+        let s = self.scale;
+        let m = self.ov.mon;
+        let panel_w = (324.0 * s) as i32;
+        let pad = (40.0 * s) as i32;
+        let area = Rect::new(m.x + pad, m.y + (250.0 * s) as i32, m.w - panel_w - 3 * pad, m.h - (250.0 * s) as i32 - (190.0 * s) as i32);
+        let mut wins: Vec<(Window, Rect)> = vec![];
+        // most recent first, so the window you were in is first
+        let mut list: Vec<&crate::wm::Client> = self.clients.iter().filter(|c| !c.tucked && m.overlap(&self.visible_rect(c)) > 0).collect();
+        list.sort_by_key(|c| self.mru.iter().position(|w| *w == c.win).unwrap_or(usize::MAX));
+        for c in list {
+            wins.push((c.frame, self.visible_rect(c)));
+        }
+        self.ov.rects.clear();
+        self.ov.order.clear();
+        let n = wins.len();
+        if n == 0 {
+            return;
+        }
+        let gap = (32.0 * s) as f32;
+        let title_h = (34.0 * s) as f32;
+        let mut best = (0usize, 0f32);
+        for cols in 1..=n {
+            let rows = n.div_ceil(cols);
+            let cw = (area.w as f32 - gap * (cols as f32 - 1.0)) / cols as f32;
+            let ch = (area.h as f32 - gap * (rows as f32 - 1.0)) / rows as f32 - title_h;
+            if cw < 40.0 || ch < 30.0 {
+                continue;
+            }
+            let sc = wins.iter().map(|(_, r)| (cw / r.w as f32).min(ch / r.h as f32)).fold(f32::MAX, f32::min).min(0.6);
+            if sc > best.1 {
+                best = (cols, sc);
+            }
+        }
+        let cols = best.0.max(1);
+        let rows = n.div_ceil(cols);
+        let cw = (area.w as f32 - gap * (cols as f32 - 1.0)) / cols as f32;
+        let ch = (area.h as f32 - gap * (rows as f32 - 1.0)) / rows as f32;
+        let total_h = rows as f32 * ch + (rows as f32 - 1.0) * gap;
+        for (i, (f, r)) in wins.iter().enumerate() {
+            let (row, col) = (i / cols, i % cols);
+            let in_row = if row == rows - 1 { n - row * cols } else { cols };
+            let row_w = in_row as f32 * cw + (in_row as f32 - 1.0) * gap;
+            let x0 = area.x as f32 + (area.w as f32 - row_w) / 2.0 + col as f32 * (cw + gap);
+            let y0 = area.y as f32 + (area.h as f32 - total_h) / 2.0 + row as f32 * (ch + gap);
+            let sc = ((cw) / r.w as f32).min((ch - title_h) / r.h as f32).min(0.6);
+            let (w, h) = ((r.w as f32 * sc) as i32, (r.h as f32 * sc) as i32);
+            let rect = Rect::new((x0 + (cw - w as f32) / 2.0) as i32, (y0 + (ch - title_h - h as f32) / 2.0) as i32, w, h);
+            self.ov.rects.insert(*f, rect);
+            self.ov.order.push(*f);
+        }
+        self.ov.relayout = false;
+    }
+
+    fn ov_results(&mut self) {
+        let q = self.ov.query.trim().to_string();
+        let mut items = vec![];
+        if let Some(e) = q.strip_prefix('=') {
+            match calc(e) {
+                Some(v) => items.push(Item { group: "Calculator", icon: "calc", title: fmt_num(v), sub: "Enter copies it".into(), act: Act::Copy(fmt_num(v)) }),
+                None => items.push(Item { group: "Calculator", icon: "calc", title: "…".into(), sub: "Numbers and + − × ÷ ^ ( )".into(), act: Act::Copy(String::new()) }),
+            }
+        } else if let Some(c) = q.strip_prefix('>') {
+            let c = c.trim();
+            if !c.is_empty() {
+                items.push(Item { group: "Run", icon: "terminal", title: c.to_string(), sub: "Runs in a terminal".into(), act: Act::Run(c.to_string()) });
+            }
+        } else if !q.is_empty() {
+            let ql = q.to_lowercase();
+            for c in self.clients.iter() {
+                if matches(&format!("{} {}", c.title, c.class), &ql) {
+                    items.push(Item { group: "Windows", icon: "apps", title: if c.title.is_empty() { c.class.clone() } else { c.title.clone() }, sub: if c.tucked { "Tucked away".into() } else { "Open now".into() }, act: Act::Window(c.win) });
+                }
+            }
+            for (i, a) in self.ov.apps.iter().enumerate() {
+                if matches(&format!("{} {} {}", a.name, a.keywords, a.id), &ql) {
+                    items.push(Item { group: "Apps", icon: app_icon(a), title: a.name.clone(), sub: "Opens a new window".into(), act: Act::App(i) });
+                }
+            }
+            for (label, page, wh) in self.ov.settings_index.iter() {
+                if matches(&format!("{label} {page}"), &ql) {
+                    items.push(Item { group: "Settings", icon: "settings", title: label.clone(), sub: wh.clone(), act: Act::Setting(page.clone()) });
+                }
+            }
+            for (k, label) in [("lock", "Lock"), ("sleep", "Sleep"), ("logout", "Log out"), ("restart", "Restart"), ("poweroff", "Power off")] {
+                if matches(label, &ql) {
+                    items.push(Item { group: "Power", icon: if k == "lock" { "lock" } else { "power" }, title: label.into(), sub: String::new(), act: Act::Power(k) });
+                }
+            }
+        }
+        // keep each group short
+        let mut per: HashMap<&str, usize> = HashMap::new();
+        items.retain(|i| {
+            let n = per.entry(i.group).or_insert(0);
+            *n += 1;
+            *n <= 5
+        });
+        self.ov.items = items;
+        if self.ov.sel >= self.ov.items.len().max(1) {
+            self.ov.sel = 0;
+        }
+    }
+
+    pub fn launch_app(&mut self, i: usize) {
+        let Some(a) = self.ov.apps.get(i).cloned() else { return };
+        if a.terminal {
+            status::spawn(&format!("{} -e {}", self.cfg.apps.terminal, a.exec));
+        } else {
+            status::spawn(&a.exec);
+        }
+    }
+
+    pub fn pinned(&self) -> Vec<usize> {
+        let mut v = vec![];
+        for p in &self.cfg.apps.pinned {
+            let p = p.trim_end_matches(".desktop").to_lowercase();
+            if let Some(i) = self.ov.apps.iter().position(|a| a.id.to_lowercase() == p || a.name.to_lowercase() == p || a.id.to_lowercase().ends_with(&format!(".{p}"))) {
+                if !v.contains(&i) {
+                    v.push(i);
+                }
+            }
+        }
+        v.truncate(10);
+        v
+    }
+
+    fn activate(&mut self, act: Act) {
+        match act {
+            Act::Window(w) => {
+                if self.client(w).is_some_and(|c| c.tucked) {
+                    self.untuck(w);
+                }
+                self.overview_close(Some(w));
+            }
+            Act::App(i) => {
+                self.launch_app(i);
+                self.overview_close(None);
+            }
+            Act::Setting(page) => {
+                status::spawn(&format!("{} --page {}", self.cfg.apps.settings, status::quote(&page)));
+                self.overview_close(None);
+            }
+            Act::Run(c) => {
+                status::spawn(&format!("{} --hold -e sh -c {}", self.cfg.apps.terminal, status::quote(&c)));
+                self.overview_close(None);
+            }
+            Act::Copy(v) => {
+                if !v.is_empty() {
+                    status::spawn(&format!("sh -c 'printf %s {} | xclip -selection clipboard'", v));
+                }
+                self.overview_close(None);
+            }
+            Act::Tile(t) => {
+                if let Some(cmd) = status::tile(t, &self.ov.snap) {
+                    status::spawn(&cmd);
+                }
+                if t == "shot" {
+                    self.overview_close(None);
+                } else {
+                    // show the change at once; the next read confirms it
+                    match t {
+                        "wifi" => self.ov.snap.wifi_on = !self.ov.snap.wifi_on,
+                        "bt" => self.ov.snap.bt_on = !self.ov.snap.bt_on,
+                        "quiet" => self.ov.snap.quiet = !self.ov.snap.quiet,
+                        "night" => self.ov.snap.night_light = !self.ov.snap.night_light,
+                        _ => {}
+                    }
+                    self.status.refresh();
+                    self.ov.dirty = true;
+                }
+            }
+            Act::Power(p) => {
+                self.overview_close(None);
+                self.power(p);
+            }
+            Act::Settings => {
+                status::spawn(&self.cfg.apps.settings.clone());
+                self.overview_close(None);
+            }
+        }
+    }
+
+    pub fn power(&mut self, what: &str) {
+        match what {
+            "lock" => self.lock_now(),
+            "sleep" => {
+                self.lock_now();
+                status::spawn("systemctl suspend");
+            }
+            "logout" => self.running = false,
+            "restart" => status::spawn("systemctl reboot"),
+            "poweroff" => status::spawn("systemctl poweroff"),
+            _ => {}
+        }
+    }
+
+    pub fn overview_key(&mut self, code: u8, state: u16, sym: u32) {
+        if self.ov.closing {
+            return;
+        }
+        let searching = !self.ov.query.is_empty();
+        match sym {
+            x::KS_SUPER_L | x::KS_SUPER_R => {
+                self.super_down = true;
+                self.super_used = false;
+                return;
+            }
+            x::KS_ESCAPE => {
+                if searching { self.ov.query.clear(); self.ov.sel = 0; } else { self.overview_close(None); return; }
+            }
+            x::KS_RETURN | x::KS_KP_ENTER => {
+                if searching {
+                    if let Some(it) = self.ov.items.get(self.ov.sel).cloned() {
+                        // Ctrl+Enter on an app always opens a new window
+                        if state & x::MOD_CTRL != 0 {
+                            if let Act::Window(w) = it.act {
+                                let cls = self.client(w).map(|c| c.class.to_lowercase()).unwrap_or_default();
+                                if let Some(i) = self.ov.apps.iter().position(|a| a.id.to_lowercase().contains(&cls) || a.name.to_lowercase() == cls) {
+                                    self.activate(Act::App(i));
+                                    return;
+                                }
+                            }
+                        }
+                        self.activate(it.act);
+                    }
+                } else if self.ov.zone == 1 {
+                    if let Some(&i) = self.pinned().get(self.ov.sel) { self.activate(Act::App(i)); }
+                } else if let Some(&f) = self.ov.order.get(self.ov.sel) {
+                    let w = self.client(f).map(|c| c.win);
+                    self.overview_close(w);
+                } else {
+                    self.overview_close(None);
+                }
+                return;
+            }
+            x::KS_BACKSPACE => {
+                self.ov.query.pop();
+            }
+            x::KS_DELETE if !searching && self.ov.zone == 0 => {
+                if let Some(w) = self.ov.order.get(self.ov.sel).and_then(|f| self.client(*f)).map(|c| c.win) {
+                    self.close(w);
+                }
+            }
+            x::KS_TAB | x::KS_ISO_LEFT_TAB => {
+                self.ov.zone = (self.ov.zone + 1) % 2;
+                self.ov.sel = 0;
+            }
+            x::KS_LEFT | x::KS_UP if !searching || sym == x::KS_UP => {
+                self.ov.sel = self.ov.sel.saturating_sub(1);
+            }
+            x::KS_RIGHT | x::KS_DOWN if !searching || sym == x::KS_DOWN => {
+                let n = if searching { self.ov.items.len() } else if self.ov.zone == 1 { self.pinned().len() } else { self.ov.order.len() };
+                if self.ov.sel + 1 < n { self.ov.sel += 1; }
+            }
+            _ => {
+                if state & (x::MOD_CTRL | x::MOD_ALT | x::MOD_SUPER) == 0 {
+                    if let Some(ch) = self.keymap.char_for(code, state) {
+                        if !ch.is_control() {
+                            self.ov.query.push(ch);
+                            self.ov.sel = 0;
+                        }
+                    }
+                }
+            }
+        }
+        self.ov_results();
+        self.ov.dirty = true;
+    }
+
+    pub fn overview_click(&mut self, x: i32, y: i32, button: u8) {
+        if self.ov.closing {
+            return;
+        }
+        let hit = self.ov.hot.iter().rev().find(|(r, _)| r.contains(x, y)).map(|h| h.1.clone());
+        let card = self.ov.order.iter().rev().find(|f| self.ov.rects.get(f).is_some_and(|r| r.contains(x, y))).copied();
+        match (hit, card) {
+            (Some(Hot::Item(i)), _) => {
+                if let Some(it) = self.ov.items.get(i).cloned() { self.activate(it.act); }
+            }
+            (Some(Hot::App(i)), _) => self.activate(Act::App(i)),
+            (Some(Hot::Tile(t)), _) => self.activate(Act::Tile(t)),
+            (Some(Hot::Power(p)), _) => self.activate(Act::Power(p)),
+            (Some(Hot::Settings), _) => self.activate(Act::Settings),
+            (Some(Hot::Shelf(w)), _) => {
+                self.untuck(w);
+                self.overview_close(Some(w));
+            }
+            (Some(Hot::Slider(name, r)), _) => {
+                self.ov.drag_slider = Some(name);
+                self.slide(name, r, x);
+            }
+            (Some(Hot::Blank), _) => {}
+            (Some(Hot::Card(_)), Some(f)) | (None, Some(f)) => {
+                if let Some(w) = self.client(f).map(|c| c.win) {
+                    if button == 2 { self.close(w) } else { self.overview_close(Some(w)) }
+                }
+            }
+            _ => self.overview_close(None),
+        }
+    }
+
+    fn slide(&mut self, name: &str, r: Rect, x: i32) {
+        let pct = (((x - r.x) as f32 / r.w.max(1) as f32) * 100.0).round().clamp(0.0, 100.0) as u8;
+        if name == "volume" {
+            self.ov.snap.volume = Some(pct);
+            status::spawn(&status::set_volume(pct));
+        } else {
+            self.ov.snap.brightness = Some(pct);
+            status::spawn(&status::set_brightness(pct));
+        }
+        self.ov.dirty = true;
+    }
+
+    pub fn overview_hover(&mut self, x: i32, y: i32) {
+        if let Some(name) = self.ov.drag_slider {
+            if let Some((r, _)) = self.ov.hot.iter().find(|h| matches!(h.1, Hot::Slider(n, _) if n == name)).cloned() {
+                self.slide(name, r, x);
+            }
+            return;
+        }
+        let h = self.ov.hot.iter().rposition(|(r, _)| r.contains(x, y));
+        if h != self.ov.hover {
+            self.ov.hover = h;
+            self.ov.dirty = true;
+        }
+    }
+
+    /// Advance the open/close animation; returns true while it moves.
+    pub fn overview_tick(&mut self) -> bool {
+        if !self.ov.open {
+            return false;
+        }
+        let dur = 0.22 * self.motion().max(0.001);
+        let p = self.ov.start.map(|s| s.elapsed().as_secs_f32() / dur).unwrap_or(1.0);
+        let p = if self.motion() <= 0.0 { 1.0 } else { p.min(1.0) };
+        self.ov.t = if self.ov.closing { 1.0 - p } else { p };
+        if self.ov.relayout {
+            self.overview_layout();
+            self.ov.dirty = true;
+        }
+        let s = self.status.get();
+        if s != self.ov.snap && self.ov.drag_slider.is_none() {
+            self.ov.snap = s;
+            self.ov.dirty = true;
+        }
+        if self.ov.closing && p >= 1.0 {
+            self.ov.open = false;
+            self.ov.closing = false;
+            self.ov.t = 0.0;
+            self.comp.drop_layer(&self.conn, "overview");
+            return false;
+        }
+        if self.ov.dirty {
+            self.draw_overview();
+        }
+        self.comp.layer_alpha("overview", draw_ease(self.ov.t));
+        self.comp.dirty = true;
+        p < 1.0
+    }
+
+    // ── drawing ──────────────────────────────────────────────────────────────────────────
+    pub fn draw_overview(&mut self) {
+        self.ov.dirty = false;
+        let th = self.theme.clone();
+        let s = self.scale;
+        let m = self.ov.mon;
+        let Some(mut px) = draw::Px::new(m.w as u32, m.h as u32) else { return };
+        let mut hot: Vec<(Rect, Hot)> = vec![];
+        let f = &self.fonts;
+        let pad = 40.0 * s;
+        let panel_w = 324.0 * s;
+        let zone_w = m.w as f32 - panel_w - 3.0 * pad;
+        let cx = pad + zone_w / 2.0;
+        let searching = !self.ov.query.is_empty();
+        let hover = self.ov.hover;
+        let is_hover = |hot: &Vec<(Rect, Hot)>| hover == Some(hot.len());
+        let at = |r: Rect| Rect::new(r.x + m.x, r.y + m.y, r.w, r.h);
+
+        // search field
+        let sw = (640.0 * s).min(zone_w);
+        let (sx, sy, sh) = (cx - sw / 2.0, pad, 54.0 * s);
+        draw::rrect(&mut px, sx, sy, sw, sh, sh / 2.0, th.glass);
+        draw::rrect_line(&mut px, sx, sy, sw, sh, sh / 2.0, if searching { th.accent } else { th.line }, 1.0);
+        draw::icon(&mut px, "search", sx + 18.0 * s, sy + (sh - 20.0 * s) / 2.0, 20.0 * s, th.dim, 1.6);
+        let ty = sy + (sh - 17.0 * s * 1.25) / 2.0;
+        if searching {
+            let w = f.draw(&mut px, Face::Ui, 17.0 * s, sx + 50.0 * s, ty, th.text, &self.ov.query);
+            draw::rrect(&mut px, sx + 52.0 * s + w, sy + 15.0 * s, 2.0 * s, sh - 30.0 * s, 1.0, th.accent);
+        } else {
+            f.draw(&mut px, Face::Ui, 17.0 * s, sx + 50.0 * s, ty, th.dim, "Search windows, apps, settings · > run · = calculate");
+        }
+        hot.push((at(Rect::new(sx as i32, sy as i32, sw as i32, sh as i32)), Hot::Blank));
+
+        if searching {
+            // results list, above the dimmed cards
+            let lw = sw;
+            let (lx, mut ly) = (sx, sy + sh + 12.0 * s);
+            let rows = self.ov.items.len();
+            let mut groups = 0;
+            let mut last = "";
+            for it in &self.ov.items {
+                if it.group != last { groups += 1; last = it.group; }
+            }
+            let lh = rows as f32 * 52.0 * s + groups as f32 * 30.0 * s + 16.0 * s + if rows == 0 { 52.0 * s } else { 0.0 };
+            draw::rrect(&mut px, lx, ly, lw, lh, 14.0 * s, th.glass);
+            draw::rrect_line(&mut px, lx, ly, lw, lh, 14.0 * s, th.line, 1.0);
+            ly += 8.0 * s;
+            if rows == 0 {
+                f.draw(&mut px, Face::Ui, 14.0 * s, lx + 20.0 * s, ly + 14.0 * s, th.dim, "Nothing matches. Start with > to run it as a command.");
+            }
+            let mut last = "";
+            for (i, it) in self.ov.items.iter().enumerate() {
+                if it.group != last {
+                    last = it.group;
+                    f.draw(&mut px, Face::UiBold, 11.5 * s, lx + 20.0 * s, ly + 8.0 * s, th.dim, &it.group.to_uppercase());
+                    ly += 30.0 * s;
+                }
+                let r = Rect::new((lx + 8.0 * s) as i32, ly as i32, (lw - 16.0 * s) as i32, (52.0 * s) as i32);
+                if i == self.ov.sel || is_hover(&hot) {
+                    draw::rrect(&mut px, r.x as f32, r.y as f32, r.w as f32, r.h as f32, 10.0 * s, if i == self.ov.sel { th.soft } else { th.text.with_alpha(14) });
+                }
+                draw::rrect(&mut px, r.x as f32 + 12.0 * s, r.y as f32 + 9.0 * s, 34.0 * s, 34.0 * s, 9.0 * s, th.raised);
+                draw::icon(&mut px, it.icon, r.x as f32 + 20.5 * s, r.y as f32 + 17.5 * s, 17.0 * s, th.text, 1.6);
+                let tx = r.x as f32 + 60.0 * s;
+                let maxw = r.w as f32 - 60.0 * s - 100.0 * s;
+                f.draw(&mut px, Face::UiBold, 14.0 * s, tx, r.y as f32 + 8.0 * s, th.text, &f.fit(Face::UiBold, 14.0 * s, &it.title, maxw));
+                f.draw(&mut px, Face::Ui, 12.0 * s, tx, r.y as f32 + 28.0 * s, th.dim, &f.fit(Face::Ui, 12.0 * s, &it.sub, maxw));
+                if i == self.ov.sel {
+                    f.draw_right(&mut px, Face::Ui, 12.0 * s, (r.x + r.w) as f32 - 14.0 * s, r.y as f32 + 18.0 * s, th.dim, "Enter");
+                }
+                hot.push((at(r), Hot::Item(i)));
+                ly += 52.0 * s;
+            }
+        } else {
+            // pinned apps
+            let pins = self.pinned();
+            let tile = 52.0 * s;
+            let cell = 88.0 * s;
+            let row_w = pins.len() as f32 * cell;
+            let mut ax = cx - row_w / 2.0;
+            let ay = 124.0 * s;
+            for (k, &i) in pins.iter().enumerate() {
+                let a = &self.ov.apps[i];
+                let r = Rect::new(ax as i32, ay as i32, cell as i32, (tile + 30.0 * s) as i32);
+                let sel = self.ov.zone == 1 && self.ov.sel == k;
+                let tx = ax + (cell - tile) / 2.0;
+                draw::rrect(&mut px, tx, ay, tile, tile, 14.0 * s, if sel { th.accent } else if is_hover(&hot) { th.line } else { th.raised });
+                draw::rrect_line(&mut px, tx, ay, tile, tile, 14.0 * s, th.line, 1.0);
+                draw::icon(&mut px, app_icon(a), tx + (tile - 22.0 * s) / 2.0, ay + (tile - 22.0 * s) / 2.0, 22.0 * s, if sel { th.on_accent } else { th.text }, 1.5);
+                let name = f.fit(Face::Ui, 12.0 * s, &a.name, cell - 6.0 * s);
+                f.draw_centered(&mut px, Face::Ui, 12.0 * s, ax + cell / 2.0, ay + tile + 8.0 * s, th.text, &name);
+                hot.push((at(r), Hot::App(i)));
+                ax += cell;
+            }
+            if self.ov.order.is_empty() {
+                f.draw_centered(&mut px, Face::Ui, 15.0 * s, cx, m.h as f32 / 2.0 - 10.0 * s, th.dim, "No windows open. Pick an app above, or type to find one.");
+            }
+        }
+
+        // card titles and the selection ring (the cards themselves are the live windows)
+        for (k, fr) in self.ov.order.iter().enumerate() {
+            let Some(r) = self.ov.rects.get(fr) else { continue };
+            let Some(c) = self.client(*fr) else { continue };
+            let lr = Rect::new(r.x - m.x, r.y - m.y, r.w, r.h);
+            let sel = !searching && self.ov.zone == 0 && self.ov.sel == k;
+            if sel {
+                draw::rrect_line(&mut px, lr.x as f32 - 4.0, lr.y as f32 - 4.0, lr.w as f32 + 8.0, lr.h as f32 + 8.0, 13.0 * s, th.accent, 2.5);
+            }
+            let title = if c.title.is_empty() { c.class.clone() } else { c.title.clone() };
+            let t = f.fit(if sel { Face::UiBold } else { Face::Ui }, 13.0 * s, &title, lr.w as f32 + 40.0 * s);
+            f.draw_centered(&mut px, if sel { Face::UiBold } else { Face::Ui }, 13.0 * s, lr.x as f32 + lr.w as f32 / 2.0, (lr.y + lr.h) as f32 + 10.0 * s, if sel { th.text } else { th.dim }, &t);
+            hot.push((*r, Hot::Card(*fr)));
+        }
+
+        // the shelf: tucked-away windows
+        let tucked: Vec<(Window, String)> = self.clients.iter().filter(|c| c.tucked).map(|c| (c.win, if c.title.is_empty() { c.class.clone() } else { c.title.clone() })).collect();
+        if !tucked.is_empty() && !searching {
+            let y = m.h as f32 - 150.0 * s;
+            f.draw_centered(&mut px, Face::UiBold, 11.5 * s, cx, y, th.dim, "TUCKED AWAY");
+            let chips: Vec<(Window, String, f32)> = tucked.iter().take(8).map(|(w, t)| {
+                let t = f.fit(Face::Ui, 13.0 * s, t, 220.0 * s);
+                let w2 = f.measure(Face::Ui, 13.0 * s, &t) + 32.0 * s;
+                (*w, t, w2)
+            }).collect();
+            let total: f32 = chips.iter().map(|c| c.2).sum::<f32>() + (chips.len() as f32 - 1.0) * 10.0 * s;
+            let mut x0 = cx - total / 2.0;
+            for (w, t, cw) in chips {
+                let r = Rect::new(x0 as i32, (y + 26.0 * s) as i32, cw as i32, (40.0 * s) as i32);
+                draw::rrect(&mut px, r.x as f32, r.y as f32, r.w as f32, r.h as f32, 20.0 * s, if is_hover(&hot) { th.raised } else { th.glass });
+                draw::rrect_line(&mut px, r.x as f32, r.y as f32, r.w as f32, r.h as f32, 20.0 * s, th.line, 1.0);
+                f.draw(&mut px, Face::Ui, 13.0 * s, r.x as f32 + 16.0 * s, r.y as f32 + 11.0 * s, th.text, &t);
+                hot.push((at(r), Hot::Shelf(w)));
+                x0 += cw + 10.0 * s;
+            }
+        }
+        let hint = if searching { "Enter opens · Ctrl+Enter opens a new window · arrows move · Esc clears" } else { "Type to search · arrows move · Enter opens · Delete closes · Tab: apps · Esc back" };
+        f.draw_centered(&mut px, Face::Ui, 12.5 * s, cx, m.h as f32 - 44.0 * s, th.dim, hint);
+
+        // the panel
+        self.draw_panel(&mut px, &mut hot, m);
+        self.ov.hot = hot;
+        self.comp.set_layer(&self.conn, "overview", &px, m.x, m.y, draw_ease(self.ov.t));
+    }
+
+    fn draw_panel(&self, px: &mut draw::Px, hot: &mut Vec<(Rect, Hot)>, m: Rect) {
+        let th = &self.theme;
+        let f = &self.fonts;
+        let s = self.scale;
+        let sn = &self.ov.snap;
+        let pw = 324.0 * s;
+        let (x, y) = (m.w as f32 - pw - 40.0 * s, 40.0 * s);
+        let h = m.h as f32 - 80.0 * s;
+        let at = |r: Rect| Rect::new(r.x + m.x, r.y + m.y, r.w, r.h);
+        let hov = |hot: &Vec<(Rect, Hot)>| self.ov.hover == Some(hot.len());
+        draw::rrect(px, x, y, pw, h, 14.0 * s, th.glass);
+        draw::rrect_line(px, x, y, pw, h, 14.0 * s, th.line, 1.0);
+        hot.push((at(Rect::new(x as i32, y as i32, pw as i32, h as i32)), Hot::Blank));
+        let ix = x + 24.0 * s;
+        let iw = pw - 48.0 * s;
+        let now = local_time();
+        f.draw(px, Face::UiBold, 52.0 * s, ix, y + 20.0 * s, th.text, &format!("{:02}:{:02}", now.0, now.1));
+        f.draw(px, Face::Ui, 14.0 * s, ix, y + 92.0 * s, th.dim, &now.2);
+        // tiles
+        let tiles: [(&str, &str, &str, String, bool); 6] = [
+            ("wifi", if sn.wifi_on { "wifi" } else { "wifi-off" }, "Wi-Fi", if !sn.wifi_on { "Off".into() } else { sn.ssid.clone().unwrap_or_else(|| "Not connected".into()) }, sn.wifi_on),
+            ("bt", "bt", "Bluetooth", if sn.bt_on { "On".into() } else { "Off".into() }, sn.bt_on),
+            ("quiet", "quiet", "Quiet", if sn.quiet { "Notices held".into() } else { "Off".into() }, sn.quiet),
+            ("night", "sun", "Night light", if sn.night_light { "On".into() } else { "Off".into() }, sn.night_light),
+            ("ground", if th.night { "moon" } else { "sun" }, if th.night { "Night" } else { "Paper" }, "Switch ground".into(), false),
+            ("shot", "camera", "Screenshot", "An area".into(), false),
+        ];
+        let tw = (iw - 10.0 * s) / 2.0;
+        let th_ = 64.0 * s;
+        for (i, (key, ic, name, sub, on)) in tiles.iter().enumerate() {
+            let tx = ix + (i % 2) as f32 * (tw + 10.0 * s);
+            let ty = y + 130.0 * s + (i / 2) as f32 * (th_ + 10.0 * s);
+            let r = Rect::new(tx as i32, ty as i32, tw as i32, th_ as i32);
+            let (bg, fg) = if *on { (th.accent, th.on_accent) } else if hov(hot) { (th.line, th.text) } else { (th.raised, th.text) };
+            draw::rrect(px, tx, ty, tw, th_, 12.0 * s, bg);
+            if !on { draw::rrect_line(px, tx, ty, tw, th_, 12.0 * s, th.line, 1.0); }
+            draw::icon(px, ic, tx + 12.0 * s, ty + (th_ - 18.0 * s) / 2.0, 18.0 * s, fg, 1.6);
+            f.draw(px, Face::UiBold, 13.0 * s, tx + 40.0 * s, ty + 13.0 * s, fg, name);
+            f.draw(px, Face::Ui, 11.5 * s, tx + 40.0 * s, ty + 33.0 * s, fg.with_alpha(220), &f.fit(Face::Ui, 11.5 * s, sub, tw - 48.0 * s));
+            hot.push((at(r), Hot::Tile(key)));
+        }
+        // sliders
+        let mut sy = y + 130.0 * s + 3.0 * (th_ + 10.0 * s) + 14.0 * s;
+        for (key, ic, val) in [("volume", if sn.muted { "mute" } else { "sound" }, sn.volume), ("brightness", "bright", sn.brightness)] {
+            draw::icon(px, ic, ix, sy, 18.0 * s, th.dim, 1.6);
+            let (tx, tw2) = (ix + 30.0 * s, iw - 30.0 * s - 40.0 * s);
+            let v = val.unwrap_or(0).min(100) as f32 / 100.0;
+            draw::rrect(px, tx, sy + 6.0 * s, tw2, 6.0 * s, 3.0 * s, th.line);
+            draw::rrect(px, tx, sy + 6.0 * s, tw2 * v, 6.0 * s, 3.0 * s, if val.is_some() { th.accent } else { th.line });
+            draw::circle(px, tx + tw2 * v, sy + 9.0 * s, 8.0 * s, th.raised);
+            draw::circle(px, tx + tw2 * v, sy + 9.0 * s, 7.0 * s, if val.is_some() { th.accent } else { th.dim });
+            f.draw_right(px, Face::Ui, 12.5 * s, ix + iw, sy + 1.0 * s, th.text, &val.map(|v| v.to_string()).unwrap_or_else(|| "—".into()));
+            let r = Rect::new((tx - 8.0 * s) as i32, (sy - 6.0 * s) as i32, (tw2 + 16.0 * s) as i32, (30.0 * s) as i32);
+            hot.push((at(Rect::new(tx as i32 + m.x - m.x, r.y, tw2 as i32, r.h)), Hot::Slider(key, at(Rect::new(tx as i32, r.y, tw2 as i32, r.h)))));
+            sy += 40.0 * s;
+        }
+        // battery
+        if let Some((pct, charging)) = sn.battery {
+            draw::icon(px, "battery", ix, sy + 4.0 * s, 20.0 * s, th.dim, 1.6);
+            let fill_w = 10.5 * s * pct as f32 / 100.0;
+            draw::rrect(px, ix + 4.5 * s * 20.0 / 24.0, sy + 4.0 * s + 9.5 * s * 20.0 / 24.0, fill_w * 20.0 / 24.0, 5.0 * s * 20.0 / 24.0, 1.0, th.dim);
+            let w = f.draw(px, Face::UiBold, 13.0 * s, ix + 30.0 * s, sy + 5.0 * s, th.text, &format!("{pct}%"));
+            f.draw(px, Face::Ui, 13.0 * s, ix + 38.0 * s + w, sy + 5.0 * s, th.dim, if charging { "charging" } else { "on battery" });
+        }
+        // power row and settings
+        let by = y + h - 24.0 * s - 44.0 * s - 10.0 * s - 44.0 * s;
+        let bw = (iw - 3.0 * 8.0 * s) / 4.0;
+        for (i, (key, ic)) in [("lock", "lock"), ("sleep", "sleep"), ("restart", "restart"), ("poweroff", "power")].iter().enumerate() {
+            let bx = ix + i as f32 * (bw + 8.0 * s);
+            let r = Rect::new(bx as i32, by as i32, bw as i32, (44.0 * s) as i32);
+            draw::rrect(px, bx, by, bw, 44.0 * s, 10.0 * s, if hov(hot) { th.line } else { th.raised });
+            draw::rrect_line(px, bx, by, bw, 44.0 * s, 10.0 * s, th.line, 1.0);
+            draw::icon(px, ic, bx + (bw - 18.0 * s) / 2.0, by + 13.0 * s, 18.0 * s, if *key == "poweroff" { th.accent } else { th.text }, 1.6);
+            hot.push((at(r), Hot::Power(key)));
+        }
+        let sy2 = by + 54.0 * s;
+        let r = Rect::new(ix as i32, sy2 as i32, iw as i32, (44.0 * s) as i32);
+        draw::rrect(px, ix, sy2, iw, 44.0 * s, 10.0 * s, if hov(hot) { th.line } else { th.raised });
+        draw::rrect_line(px, ix, sy2, iw, 44.0 * s, 10.0 * s, th.line, 1.0);
+        let lw = f.measure(Face::UiBold, 14.0 * s, "Settings") + 27.0 * s;
+        draw::icon(px, "settings", ix + (iw - lw) / 2.0, sy2 + 13.5 * s, 17.0 * s, th.text, 1.6);
+        f.draw(px, Face::UiBold, 14.0 * s, ix + (iw - lw) / 2.0 + 27.0 * s, sy2 + 13.0 * s, th.text, "Settings");
+        hot.push((at(r), Hot::Settings));
+    }
+}
+
+fn draw_ease(t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    1.0 - (1.0 - t).powi(3)
+}
+
+/// Local hours, minutes and a written date, from the C library (respects TZ).
+pub fn local_time() -> (u32, u32, String) {
+    unsafe {
+        let t = libc::time(std::ptr::null_mut());
+        let mut tm: libc::tm = std::mem::zeroed();
+        libc::localtime_r(&t, &mut tm);
+        const DAYS: [&str; 7] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+        const MONTHS: [&str; 12] = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+        let date = format!("{}, {} {}", DAYS[tm.tm_wday as usize % 7], tm.tm_mday, MONTHS[tm.tm_mon as usize % 12]);
+        (tm.tm_hour as u32, tm.tm_min as u32, date)
+    }
+}
+
+pub fn short_date() -> String {
+    unsafe {
+        let t = libc::time(std::ptr::null_mut());
+        let mut tm: libc::tm = std::mem::zeroed();
+        libc::localtime_r(&t, &mut tm);
+        const DAYS: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+        const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        format!("{} {} {}", DAYS[tm.tm_wday as usize % 7], tm.tm_mday, MONTHS[tm.tm_mon as usize % 12])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn calculator() {
+        assert_eq!(calc("2+3*4"), Some(14.0));
+        assert_eq!(calc("(2+3)*4"), Some(20.0));
+        assert_eq!(calc("2^10"), Some(1024.0));
+        assert_eq!(calc("1,5*2"), Some(3.0));
+        assert_eq!(calc("-3+1"), Some(-2.0));
+        assert_eq!(calc("1/0"), None);
+        assert_eq!(calc("2+"), None);
+        assert_eq!(fmt_num(0.1 + 0.2), "0.3");
+    }
+    #[test]
+    fn field_codes_are_dropped() {
+        assert_eq!(strip_codes("firefox %u"), "firefox");
+        assert_eq!(strip_codes("mpv --player-operation-mode=pseudo-gui -- %U"), "mpv --player-operation-mode=pseudo-gui --");
+    }
+}

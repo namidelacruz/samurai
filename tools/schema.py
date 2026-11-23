@@ -1,341 +1,187 @@
 #!/usr/bin/env python3
-"""Source of the settings schema. Run: python3 tools/schema.py  ->  shell/settings.schema.json
+"""Source of the settings list. Run: python3 tools/schema.py  ->  settings/schema.json
 
-One schema drives three things: the hub's pages (shell/hub), the validation in the `samurai`
-backend, and the niri config it generates. An item with use="niri" is read by the config generator;
-an item without is read by the shell or by a backend module (noted in "use").
+One list drives three things: the pages of the Settings app, the checks in the `samurai` command
+(a value of the wrong kind or out of range is refused), and the config files `samurai apply` writes.
+Every setting has a default and one plain sentence saying what it does.
 """
 import json, os, sys
 
-def T(key, label, default, **kw):  return dict(key=key, label=label, type="toggle", default=default, **kw)
-def I(key, label, default, lo, hi, step=1, **kw): return dict(key=key, label=label, type="int", default=default, min=lo, max=hi, step=step, **kw)
-def F(key, label, default, lo, hi, step=0.05, **kw): return dict(key=key, label=label, type="float", default=default, min=lo, max=hi, step=step, **kw)
-def E(key, label, default, options, **kw): return dict(key=key, label=label, type="enum", default=default, options=options, **kw)
-def S(key, label, default="", **kw): return dict(key=key, label=label, type="text", default=default, **kw)
-def C(key, label, default, **kw): return dict(key=key, label=label, type="color", default=default, **kw)
-def L(key, label, columns, example, **kw): return dict(key=key, label=label, type="list", default=[], columns=columns, example=example, **kw)
-def A(label, cmd, **kw): return dict(key="", label=label, type="action", cmd=cmd, **kw)
-def N(text): return dict(key="", label=text, type="note")
-def sec(jp, en, *items): return dict(jp=jp, en=en, items=list(items))
-def page(pid, jp, en, group, blurb, *sections, **kw): return dict(id=pid, jp=jp, en=en, group=group, blurb=blurb, sections=list(sections), **kw)
+def T(key, label, default, help="", **kw): return dict(key=key, label=label, type="toggle", default=default, help=help, **kw)
+def I(key, label, default, lo, hi, step=1, unit="", help="", **kw): return dict(key=key, label=label, type="int", default=default, min=lo, max=hi, step=step, unit=unit, help=help, **kw)
+def F(key, label, default, lo, hi, step=0.05, unit="", help="", **kw): return dict(key=key, label=label, type="float", default=default, min=lo, max=hi, step=step, unit=unit, help=help, **kw)
+def E(key, label, default, options, help="", **kw): return dict(key=key, label=label, type="enum", default=default, options=options, help=help, **kw)
+def S(key, label, default="", help="", **kw): return dict(key=key, label=label, type="text", default=default, help=help, **kw)
+def L(key, label, columns, example, help="", **kw): return dict(key=key, label=label, type="list", default=[], columns=columns, example=example, help=help, **kw)
+def sec(title, *items): return dict(title=title, items=list(items))
+def page(pid, title, icon, lead, *sections, custom=None): return dict(id=pid, title=title, icon=icon, lead=lead, custom=custom, sections=list(sections))
 
-RULE_FX = ["float", "tile", "fullscreen", "maximize", "pin", "center", "no_blur", "no_shadow", "no_anim", "no_dim",
-           "no_focus", "stay_focused", "opaque", "keep_aspect_ratio", "pseudo", "idle_inhibit", "no_initial_focus", "suppress_event"]
+def opts(*pairs):
+    """[(value, label)] for enums whose stored value differs from what is shown."""
+    return [dict(value=v, label=l) for v, l in pairs]
+
+ACCENTS = opts(("indigo", "Indigo"), ("moss", "Moss"), ("rust", "Rust"), ("plum", "Plum"), ("slate", "Slate"))
+ACTIONS = ["overview", "terminal", "files", "browser", "settings", "close", "fill", "fullscreen", "restore", "snap left", "snap right",
+           "snap top-left", "snap top-right", "snap bottom-left", "snap bottom-right", "center", "tuck", "untuck", "focus next",
+           "focus prev", "lock", "ground", "screenshot area", "screenshot screen", "screenshot window", "volume up", "volume down",
+           "volume mute", "brightness up", "brightness down", "spawn", "none"]
 
 PAGES = [
-  # ───────────────────────── 系 SYSTEM ─────────────────────────
-  page("displays", "画面", "DISPLAYS", "system", "Every monitor: mode, scale, place, rotation. Applies live; saved per set of monitors.",
-    sec("全", "ALL SCREENS",
-      E("displays.new_windows", "New windows open on", "focused", ["focused", "external", "primary"], use="niri"),
-      T("displays.vrr", "Adaptive sync", False, use="niri"),
-      T("displays.night.enabled", "Night light", False, use="shell"),
-      S("displays.night.from", "Night light from", "20:00", use="shell"),
-      S("displays.night.to", "Night light until", "07:00", use="shell"),
-      I("displays.night.kelvin", "Night light warmth (K)", 4000, 2500, 6500, 100, use="shell"),
-      L("displays.monitors", "Monitors", ["output", "mode", "position", "scale", "transform", "disabled"], "eDP-1 · 2560x1600@120 · 0,0 · 1.5 · normal · no", use="niri")),
-    custom="displays"),
-  page("input", "入力", "INPUT", "system", "Keyboard, pointer, touchpad, gestures, cursor.",
-    sec("鍵盤", "KEYBOARD",
-      S("input.kb_layout", "Layout", "us", use="niri"),
-      S("input.kb_variant", "Variant", "", use="niri"),
-      S("input.kb_options", "Options (e.g. caps:escape)", "", use="niri"),
-      I("input.repeat_rate", "Repeat rate (per second)", 25, 1, 100, use="niri"),
-      I("input.repeat_delay", "Repeat delay (ms)", 600, 100, 2000, 50, use="niri"),
-      T("input.numlock", "Num Lock on at login", False, use="niri")),
-    sec("鼠", "POINTER",
-      F("input.sensitivity", "Speed", 0.0, -1.0, 1.0, use="niri"),
-      E("input.accel_profile", "Acceleration", "adaptive", ["adaptive", "flat"], use="niri"),
-      T("input.left_handed", "Left-handed buttons", False, use="niri"),
-      T("input.natural_scroll", "Natural scroll (mouse)", False, use="niri"),
-      F("input.scroll_factor", "Scroll speed", 1.0, 0.1, 5.0, 0.1, use="niri"),
-      T("input.follow_mouse", "Focus follows the pointer", False, use="niri"),
-      T("input.middle_paste", "Middle-click paste", True, use="niri")),
-    sec("触", "TOUCHPAD",
-      T("input.touchpad.tap", "Tap to click", True, use="niri"),
-      T("input.touchpad.tap_drag", "Tap and drag", True, use="niri"),
-      T("input.touchpad.drag_lock", "Drag lock", False, use="niri"),
-      T("input.touchpad.natural", "Natural scroll", True, use="niri"),
-      T("input.touchpad.dwt", "Off while typing", True, use="niri"),
-      T("input.touchpad.clickfinger", "Click by finger count", False, use="niri"),
-      T("input.touchpad.middle_emu", "Middle-click emulation", False, use="niri"),
-      F("input.touchpad.scroll_factor", "Scroll speed", 1.0, 0.1, 5.0, 0.1, use="niri")),
-    sec("矢", "CURSOR",
-      S("input.cursor.theme", "Theme", "", use="niri"),
-      I("input.cursor.size", "Size", 24, 12, 96, 2, use="niri"),
-      I("input.cursor.timeout", "Hide after idle (s, 0 = never)", 0, 0, 600, 1, use="niri"),
-      T("input.cursor.hide_typing", "Hide while typing", True, use="niri"))),
-  page("keybinds", "鍵", "KEYBINDS", "system", "Your own binds sit on top of the built-in ones. A bind that shadows a built-in one is flagged, never applied silently.",
-    sec("鍵", "OPTIONS",
-      E("binds.mod", "Main modifier", "SUPER", ["SUPER", "ALT", "CTRL"], use="niri"),
-      L("binds.custom", "Custom binds", ["keys", "action", "arg", "name", "flags"], "SUPER + SHIFT + T · spawn · kitty · Scratch terminal · ", use="niri"),
-      L("binds.disabled", "Built-in binds turned off", ["id"], "win.close", use="niri"),
-      L("binds.moved", "Built-in binds moved", ["id", "keys"], "frame.widgets · SUPER + SHIFT + W", use="niri"),
-      L("binds.mouse", "Extra mouse buttons", ["button", "action", "arg"], "MouseBack · workspace · e-1", use="niri")),
-    custom="keybinds"),
-  page("connect", "接続", "CONNECT", "system", "Wi-Fi, Bluetooth, hotspot, wired. The UC-Secure and eduroam setup and repairs are always here.",
-    sec("通信", "WIFI",
-      T("net.auto_repair", "Repair by itself when a connection drops", True, use="services"),
-      T("net.show_log", "Show the live EAP / TLS log", True, use="shell")),
-    sec("共有", "HOTSPOT",
-      S("net.hotspot.ssid", "Hotspot name", "samurai", use="services"),
-      S("net.hotspot.password", "Hotspot password (kept in the keyring, not here)", "", secret=True, use="services")),
-    custom="connect"),
-  page("gpu", "描画", "GPU", "system", "Which GPU draws the desktop, and passthrough to virtual machines.",
-    sec("描画", "RENDER",
-      E("gpu.mode", "Render GPU", "auto", ["auto", "integrated", "discrete"], use="niri")),
-    sec("通過", "PASSTHROUGH (VFIO)",
-      N("Passthrough changes the bootloader and initramfs. Samurai only checks readiness and writes the files after you confirm; it never touches firmware settings."),
-      T("gpu.passthrough.enabled", "Reserve the discrete GPU for virtual machines", False, use="services", danger=True),
-      A("Check readiness (IOMMU, groups, drivers)", ["samurai", "gpu", "check"])),
-    custom="gpu"),
-  page("record", "録画", "RECORD", "system", "Screenshots and screen recording.",
-    sec("録画", "RECORDING",
-      E("record.fps", "Frame rate", "60", ["30", "60", "120"], use="services"),
-      E("record.rate_mode", "Frame pacing", "constant", ["constant", "variable"], use="services"),
-      E("record.quality", "Quality", "high", ["medium", "high", "very_high", "ultra"], use="services"),
-      E("record.codec", "Codec", "h264", ["h264", "hevc", "av1"], use="services"),
-      E("record.encoder", "Encoder", "gpu", ["gpu", "cpu"], use="services"),
-      T("record.cursor", "Show the cursor", True, use="services"),
-      T("record.audio", "Record desktop sound", True, use="services"),
-      T("record.mic", "Record the microphone", False, use="services"),
-      S("record.dir", "Save to", "~/Videos/Samurai", use="services")),
-    sec("撮", "SCREENSHOTS",
-      S("shot.dir", "Save to", "~/Pictures/Samurai", use="services"),
-      T("shot.copy", "Also copy to the clipboard", True, use="services"),
-      T("shot.freeze", "Freeze the screen while selecting", True, use="services"))),
-  page("dictate", "音声", "DICTATE", "system", "Voice typing. Speech stays on this machine unless you choose the remote engine.",
-    sec("音声", "VOICE TYPING",
-      T("dictate.enabled", "Voice typing", False, use="services"),
-      E("dictate.engine", "Engine", "local-fast", ["local-fast", "local-accurate", "remote-api"], use="services"),
-      S("dictate.language", "Language", "en", use="services"),
-      S("dictate.api_key", "Remote API key (kept in the keyring, not here)", "", secret=True, use="services"),
-      A("Download the local model", ["samurai", "dictate", "model", "fetch"]),
-      A("Remove the local model", ["samurai", "dictate", "model", "remove"]))),
-  page("region", "言語", "REGION", "system", "Clock, date, units, interface language.",
-    sec("時", "CLOCK",
-      T("region.clock24", "24-hour time", True, use="shell"),
-      T("region.seconds", "Show seconds", False, use="shell"),
-      E("region.date", "Date in the bar", "kanji", ["kanji", "iso", "long", "off"], use="shell"),
-      E("region.week_start", "Week starts on", "sunday", ["sunday", "monday"], use="shell")),
-    sec("語", "LANGUAGE",
-      E("region.labels", "Labels", "both", ["both", "japanese", "english"], use="shell"),
-      E("region.units", "Units", "metric", ["metric", "imperial"], use="shell"),
-      S("region.weather_place", "Weather location (empty = off)", "", use="shell"))),
-  # ───────────────────────── 机 DESKTOP ─────────────────────────
-  page("look", "外観", "LOOK", "desktop", "Two grounds, one red. Ink and ground trade places; the frame, the grid and the red stay where they are.",
-    sec("地", "BASE",
-      E("look.base", "Ground", "black", ["black", "white", "auto"], use="shell"),
-      S("look.auto_light_from", "Auto: white from", "07:00", use="shell"),
-      S("look.auto_light_to", "Auto: white until", "19:00", use="shell")),
-    sec("赤", "ACCENT",
-      E("look.accent_name", "Red", "186C", ["186C", "485C", "032C", "own"], use="shell"),
-      C("look.accent_own", "Own hex", "#C8102E", use="shell")),
-    sec("窓", "WINDOWS",
-      I("look.gaps_in", "Gap between windows", 8, 0, 64, use="niri"),
-      I("look.gaps_out", "Gap to the frame", 16, 0, 96, use="niri"),
-      I("look.border", "Window line weight", 1, 0, 8, use="niri"),
-      I("look.rounding", "Corner rounding (0 is the design)", 0, 0, 32, use="niri"),
-      F("look.active_opacity", "Focused window opacity", 1.0, 0.3, 1.0, use="niri"),
-      F("look.inactive_opacity", "Other windows opacity", 1.0, 0.3, 1.0, use="niri"),
-      T("look.blur", "Blur behind see-through windows", False, use="niri"),
-      I("look.blur_size", "Blur size", 4, 1, 20, use="niri"),
-      I("look.blur_passes", "Blur passes", 1, 1, 6, use="niri"),
-      T("look.blur_xray", "Blur X-ray", False, use="niri"),
-      F("look.blur_noise", "Blur noise", 0.0, 0.0, 1.0, 0.01, use="niri"),
-      T("look.shadow", "Shadows", False, use="niri"),
-      I("look.shadow_range", "Shadow size", 8, 0, 64, use="niri"),
-      T("look.shadow_sharp", "Hard-edged shadow", True, use="niri")),
-    sec("配", "LAYOUT",
-      E("look.center_column", "Centre the focused column", "never", ["never", "on-overflow", "always"], use="niri"),
-      T("look.no_csd", "Ask apps to drop their own title bars", True, use="niri"),
-      T("look.single_center", "Centre a lone window", False, use="niri"),
-      F("look.column_width", "New window width (share of the screen)", 0.5, 0.2, 1.0, use="niri")),
-    sec("字", "TYPE",
-      S("look.font", "Typeface", "IBM Plex Mono", use="shell"),
-      S("look.font_jp", "Japanese typeface", "Noto Sans CJK JP", use="shell"),
-      I("look.font_px", "Text size", 13, 9, 24, use="shell"),
-      F("look.scale", "Interface scale", 1.0, 0.75, 2.0, 0.25, use="shell")),
-    sec("壁", "WALLPAPER",
-      E("look.wallpaper", "Wallpaper", "seal", ["seal", "plain", "image"], use="shell"),
-      S("look.wallpaper_image", "Image file", "", use="shell"),
-      T("look.corner_mark", "Show the mark in the corner", True, use="shell")),
-    sec("型", "SAVED LOOKS",
-      L("look.saved", "Saved looks", ["name"], "my look", use="backend")),
+  page("look", "Look", "ink", "Night or paper, one accent, your ink. Everything here changes at once.",
+    sec("Ground",
+      E("look.ground", "Ground", "sun", opts(("night", "Night"), ("paper", "Paper"), ("sun", "Follow the sun")),
+        help="Follow the sun: paper during the day, night after dark (the times below)."),
+      S("look.sun_from", "Paper from", "07:30", help="When the paper ground starts, as HH:MM.", pattern=r"^([01]?\d|2[0-3]):[0-5]\d$"),
+      S("look.sun_to", "Night from", "18:00", help="When the night ground starts, as HH:MM.", pattern=r"^([01]?\d|2[0-3]):[0-5]\d$"),
+      E("look.accent", "Accent", "indigo", ACCENTS, help="Used for focus, selection and the ink in the wallpaper.")),
+    sec("Size and motion",
+      F("look.scale", "Text and interface size", 1.0, 1.0, 2.5, 0.25, unit="×", help="One size for every app, old and new. 1.5 suits a 14\" 2.5K screen."),
+      E("look.motion", "Motion", "gentle", opts(("full", "Full"), ("gentle", "Gentle"), ("off", "Off")), help="Gentle: quick and short. Off: everything just appears."),
+      E("look.corners", "Window corners", "rounded", opts(("rounded", "Rounded"), ("square", "Square")))),
+    sec("On the desktop",
+      T("look.show_clock", "Time in the corner", True, help="A small pill, top right. It hides while a window covers it."),
+      T("look.show_mark", "This machine's mark", True, help="The mark of your one-time ink, bottom left.")),
+    sec("Terminal",
+      T("term.follow", "Terminal colours follow the ground", True),
+      F("term.size", "Terminal text size", 11.0, 7.0, 24.0, 0.5, unit="pt"),
+      T("term.prompt", "Samurai prompt in bash and zsh", True, help="Folder, git branch and changes, time taken, and the error code only when a command failed."),
+      I("term.padding", "Space around the text", 18, 0, 48, 2, unit="px")),
+    sec("Fonts",
+      S("look.ui_font", "Interface font", "Inter"),
+      S("look.mono_font", "Monospace font", "JetBrains Mono")),
     custom="look"),
-  page("frame", "枠", "FRAME", "desktop", "The white frame: bar, rail, lines, and what each shows.",
-    sec("枠", "LINES",
-      I("frame.line", "Line weight", 1, 1, 6, use="shell"),
-      I("frame.inset", "Inset from the screen edge", 12, 0, 48, use="shell"),
-      T("frame.titles", "Title strip on windows", True, use="niri"),
-      T("frame.cuts", "This machine's cut lines on the frame", True, use="shell")),
-    sec("棒", "BAR",
-      E("frame.bar_edge", "Edge", "top", ["top", "bottom"], use="shell"),
-      I("frame.bar_height", "Height", 44, 28, 64, 2, use="shell"),
-      T("frame.bar.workspaces", "Workspaces", True, use="shell"),
-      I("frame.bar.workspace_count", "How many", 4, 1, 10, use="shell"),
-      E("frame.bar.workspace_marks", "Workspace marks", "kanji", ["kanji", "digits"], use="shell"),
-      T("frame.bar.title", "Focused window title", True, use="shell"),
-      T("frame.bar.update", "Update badge", True, use="shell"),
-      T("frame.bar.network", "Network", True, use="shell"),
-      T("frame.bar.sound", "Sound", True, use="shell"),
-      T("frame.bar.battery", "Battery", True, use="shell"),
-      T("frame.bar.clock", "Clock and date", True, use="shell"),
-      T("frame.bar.tray", "Tray icons", True, use="shell"),
-      T("frame.bar.media", "Now playing", False, use="shell")),
-    sec("軌", "RAIL",
-      E("frame.rail_side", "Side", "left", ["left", "right", "hidden"], use="shell"),
-      I("frame.rail_width", "Width", 48, 32, 72, 2, use="shell"),
-      T("frame.rail.minimized", "Minimized apps in the rail", True, use="shell"),
-      T("frame.rail.running", "Unpinned running apps in the rail", True, use="shell"),
-      L("frame.rail.pinned", "Pinned apps", ["app"], "firefox.desktop", use="shell")),
-    sec("通知", "NOTICES AND OVERLAYS",
-      E("frame.notices.corner", "Notices grow from", "bar-right", ["bar-right", "bar-left", "bottom-right"], use="shell"),
-      I("frame.notices.seconds", "Seconds on screen", 6, 1, 60, use="shell"),
-      T("frame.notices.dnd", "Do not disturb", False, use="shell"),
-      T("frame.osd", "Volume and brightness overlay", True, use="shell"))),
-  page("start", "起動", "START", "desktop", "The start panel: search, pinned apps, power.",
-    sec("起動", "START",
-      T("start.search.apps", "Search apps", True, use="shell"),
-      T("start.search.files", "Search files", True, use="shell"),
-      T("start.search.settings", "Search settings", True, use="shell"),
-      T("start.search.calc", "Calculator (= 2+2)", True, use="shell"),
-      T("start.search.commands", "Run commands (> cmd)", True, use="shell"),
-      I("start.columns", "Pinned columns", 5, 3, 8, use="shell"),
-      I("start.width", "Panel width", 520, 360, 900, 20, use="shell"),
-      T("start.power_row", "Power row", True, use="shell"),
-      T("start.confirm_power", "Ask before shutting down", True, use="shell"))),
-  page("widgets", "小物", "WIDGETS", "desktop", "Desktop widgets sit on the grid, under windows.",
-    sec("時", "CLOCK",
-      T("widgets.clock.enabled", "Clock", False, use="shell"),
-      E("widgets.clock.face", "Face", "digits", ["digits", "kanji", "bars"], use="shell"),
-      E("widgets.clock.place", "Place", "bottom-left", ["top-left", "top-right", "bottom-left", "bottom-right", "center"], use="shell"),
-      I("widgets.clock.size", "Size", 96, 32, 320, 8, use="shell")),
-    sec("暦", "CALENDAR",
-      T("widgets.calendar.enabled", "Calendar", False, use="shell"),
-      E("widgets.calendar.place", "Place", "top-right", ["top-left", "top-right", "bottom-left", "bottom-right"], use="shell")),
-    sec("系", "SYSTEM",
-      T("widgets.system.enabled", "System readout", False, use="shell"),
-      E("widgets.system.place", "Place", "bottom-right", ["top-left", "top-right", "bottom-left", "bottom-right"], use="shell")),
-    sec("天", "WEATHER",
-      T("widgets.weather.enabled", "Weather", False, use="shell"),
-      E("widgets.weather.place", "Place", "top-left", ["top-left", "top-right", "bottom-left", "bottom-right"], use="shell")),
-    sec("波", "VISUALIZER",
-      T("widgets.viz.enabled", "Sound visualizer", False, use="shell"),
-      E("widgets.viz.style", "Style", "bars", ["bars", "line", "blocks"], use="shell"),
-      I("widgets.viz.bands", "Bands", 32, 8, 96, 4, use="shell"),
-      E("widgets.viz.fps", "Frame rate", "30", ["30", "45", "60"], use="shell"))),
-  page("lock", "施錠", "LOCK", "desktop", "Lock screen, login screen, and when the machine locks itself.",
-    sec("施錠", "LOCK SCREEN",
-      E("lock.face", "Face", "seal", ["seal", "clock", "plain"], use="shell"),
-      T("lock.show_user", "Show your name", True, use="shell"),
-      T("lock.show_notices", "Show notice count", False, use="shell"),
-      T("lock.media", "Media keys work when locked", True, use="niri")),
-    sec("眠", "IDLE",
-      I("idle.dim", "Dim after (min, 0 = never)", 4, 0, 120, use="services"),
-      I("idle.lock", "Lock after (min, 0 = never)", 5, 0, 120, use="services"),
-      I("idle.screen_off", "Screen off after (min, 0 = never)", 8, 0, 120, use="services"),
-      I("idle.suspend", "Sleep after (min, 0 = never)", 20, 0, 240, use="services"),
-      T("idle.lock_before_sleep", "Lock before sleep", True, use="services")),
-    sec("門", "LOGIN SCREEN",
-      T("greeter.match_lock", "Login screen matches the lock screen", True, use="services"),
-      T("greeter.show_users", "List users", True, use="services"),
-      E("greeter.base", "Ground", "black", ["black", "white"], use="services"),
-      A("Apply to the login screen (administrator)", ["samurai", "greeter", "apply"]))),
-  page("motion", "動", "MOTION", "desktop", "The design cuts, it does not glide. Motion is off unless you turn it on.",
-    sec("動", "MOTION",
-      E("motion.mode", "Motion", "cut", ["cut", "short", "full"], use="niri"),
-      F("motion.speed", "Slowdown (1 is normal, lower is faster)", 1.0, 0.2, 5.0, 0.1, use="niri"),
-      T("motion.shell", "Animate the frame's panels", False, use="shell"))),
-  # ───────────────────────── 追 ADD-ONS ─────────────────────────
-  page("store", "店", "STORE", "addons", "Looks, widgets and plugins from a catalogue you choose. Nothing installs without your click.",
-    sec("店", "CATALOGUE",
-      S("store.catalogue", "Catalogue (git URL)", "", use="backend"),
-      T("store.verify", "Only install entries with a checksum", True, use="backend"),
-      A("Refresh the catalogue", ["samurai", "store", "refresh"])),
-    custom="store"),
-  page("plugins", "追加", "PLUGINS", "addons", "Installed plugins. Each runs inside the shell with its own on/off switch.",
-    sec("追加", "PLUGINS",
-      L("plugins.enabled", "Enabled plugins", ["id"], "clock-kanji", use="shell")),
-    custom="plugins"),
-  # ───────────────────────── 深 ADVANCED ─────────────────────────
-  page("windows", "窓則", "WINDOWS", "advanced", "Rules for windows, matched by app id and title (regular expressions).",
-    sec("窓則", "WINDOW RULES",
-      L("rules.window", "Window rules", ["class", "title", "effect", "value"], "^firefox$ ·  · workspace · web", use="niri", effects=["float", "maximize", "fullscreen", "no_focus", "workspace", "output", "opacity", "rounding", "block_capture", "width"]))),
-  page("layers", "層則", "LAYERS", "advanced", "Rules for panels and overlays, matched by namespace.",
-    sec("層則", "LAYER RULES",
-      L("rules.layer", "Layer rules", ["namespace", "effect", "value"], "^notifications$ · block_capture · ", use="niri", effects=["opacity", "blur", "xray", "shadow", "block_capture", "rounding"]))),
-  page("autostart", "自動", "AUTOSTART", "advanced", "Commands run once when the session starts.",
-    sec("自動", "AUTOSTART",
-      L("autostart", "Commands", ["command"], "nextcloud --background", use="niri"))),
-  page("env", "環境", "ENV", "advanced", "Environment variables for every app started from the session.",
-    sec("環境", "ENVIRONMENT",
-      L("env", "Variables", ["name", "value"], "MOZ_ENABLE_WAYLAND · 1", use="niri"))),
-  page("perapp", "個別", "PER-APP", "advanced", "Override the look for one app (matched by app id).",
-    sec("個別", "APP OVERRIDES",
-      L("perapp", "Overrides", ["class", "opacity", "rounding", "border", "blur", "shadow"], "^kitty$ · 0.92 ·  ·  · on · ", use="niri"))),
-  page("fix", "修復", "FIX", "advanced", "Repairs carried over from Shadow, and the checks behind them.",
-    sec("修復", "REPAIRS",
-      A("Repair the Wi-Fi connection", ["shadow", "wifi", "repair"]),
-      A("Set up UC-Secure + AirUC-Secure", ["samurai", "term", "shadow", "wifi", "campus", "ucalgary"]),
-      A("Set up eduroam", ["samurai", "term", "shadow", "wifi", "campus", "eduroam"]),
-      A("Check the niri config Samurai wrote", ["samurai", "check"]),
-      A("Rewrite the niri config from settings", ["samurai", "apply"]),
-      A("Restart the frame", ["samurai", "shell", "restart"]),
-      T("fix.safe_mode", "Safe mode: plain frame, no plugins, no wallpaper", False, use="shell"))),
-  page("updates", "更新", "UPDATES", "foot", "Updates are fetched and checked in the background; installing waits for your click.",
-    sec("更新", "UPDATES",
-      E("updates.auto", "Automatic updates", "download", ["download", "notify", "off"], use="backend"),
-      E("updates.every", "Check", "daily", ["hourly", "daily", "weekly"], use="backend"),
-      S("updates.repo", "Repository", "", use="backend"),
-      S("updates.branch", "Branch", "main", use="backend"),
-      A("Check now", ["samurai", "update", "check"]),
-      A("Install the update", ["samurai", "term", "samurai", "update", "install"])),
-    custom="updates"),
-  page("incognito", "隠", "INCOGNITO", "foot", "Hides what identifies you and this machine, and breaks the grid on purpose. Mod+Shift+I leaves.",
-    sec("隠", "INCOGNITO",
-      T("incognito.hide_user", "Hide your name and the host name", True, use="shell"),
-      T("incognito.hide_seal", "Hide the wallpaper and the mark", True, use="shell"),
-      T("incognito.hide_titles", "Hide window titles", True, use="shell"),
-      T("incognito.hide_notices", "Hide notice text", True, use="shell"),
-      T("incognito.chaos", "Break the grid (the chaotic style)", True, use="shell"),
-      I("incognito.chaos_strength", "How broken (degrees of tilt)", 6, 0, 15, use="shell"),
-      T("incognito.clicks_in_place", "Controls stay where they were (only the drawing moves)", False, use="shell"),
-      A("Enter incognito now", ["samurai", "incognito", "on"]))),
+
+  page("displays", "Displays", "display", "Screens, their sizes and where they sit. Night light.",
+    sec("Screens",
+      L("displays.monitors", "Fixed settings per screen", ["output", "mode", "position", "rotate", "primary"], "HDMI-1 · 1920x1080@60 · right-of eDP-1 · normal · no",
+        help="Screens without a line use their best mode, placed left to right."),
+      T("displays.mirror_new", "Mirror a new screen until it is arranged", False)),
+    sec("Night light",
+      T("night.enabled", "Night light", False, help="Warmer colours in the evening."),
+      I("night.temp", "Evening warmth", 4000, 2500, 6000, 100, unit="K"),
+      S("night.from", "From", "20:00", pattern=r"^([01]?\d|2[0-3]):[0-5]\d$"),
+      S("night.to", "Until", "07:00", pattern=r"^([01]?\d|2[0-3]):[0-5]\d$")),
+    custom="displays"),
+
+  page("network", "Network", "wifi", "Wi-Fi, campus networks, wired and VPN. Changes apply at once.",
+    sec("Wi-Fi",
+      T("net.repair_after_update", "Repair campus Wi-Fi after system updates", True, help="Checks UC-Secure and eduroam once after each update and fixes the certificate if needed."),
+      T("net.powersave", "Wi-Fi power saving", True, help="Off can help a connection that keeps dropping.")),
+    custom="network"),
+
+  page("sound", "Sound", "sound", "Where sound goes, where it comes from, and how loud.",
+    sec("Volume",
+      E("sound.max", "Loudest volume", "100", opts(("100", "100%"), ("150", "150% (may distort)"))),
+      I("sound.step", "Volume keys change it by", 5, 1, 20, 1, unit="%")),
+    custom="sound"),
+
+  page("keyboard", "Keyboard & shortcuts", "keyboard", "Layout, repeat, and every shortcut. Tap Super alone for the overview.",
+    sec("Typing",
+      S("kbd.layout", "Layout", "us", help="One or more, comma separated: us,ca"),
+      S("kbd.variant", "Variant", "", help="Empty for the usual one; e.g. colemak, dvorak, intl."),
+      S("kbd.options", "Extra options", "", help="xkb options, e.g. caps:escape or grp:alt_shift_toggle"),
+      I("kbd.delay", "Repeat starts after", 300, 150, 1000, 25, unit="ms"),
+      I("kbd.rate", "Repeats per second", 30, 5, 80, 1)),
+    sec("Shortcuts",
+      L("keys.custom", "Your shortcuts", ["keys", "action"], "Super+T · spawn alacritty -e htop",
+        help="A line here replaces the built-in shortcut on the same keys. Action \"none\" turns a built-in one off.")),
+    custom="keyboard"),
+
+  page("mouse", "Mouse & touchpad", "mouse", "Speed, scrolling, tapping, and how windows take focus.",
+    sec("Pointer",
+      F("mouse.speed", "Speed", 0.0, -1.0, 1.0, 0.1, help="0 is the device's own speed."),
+      T("mouse.natural", "Natural scrolling", False, help="Content moves with your fingers."),
+      T("mouse.left_handed", "Left-handed buttons", False),
+      E("mouse.cursor", "Cursor size", "24", opts(("24", "Normal"), ("32", "Large"), ("48", "Larger")))),
+    sec("Touchpad",
+      T("touch.tap", "Tap to click", True),
+      T("touch.dwt", "Ignore the touchpad while typing", True),
+      T("touch.natural", "Natural scrolling on the touchpad", True)),
+    sec("Windows",
+      E("windows.focus", "A window takes focus", "click", opts(("click", "when clicked"), ("hover", "when the pointer is over it"))),
+      T("windows.snap", "Drag to an edge to snap", True, help="Sides make halves, corners make quarters, the top fills the screen."),
+      T("windows.shake", "Shake a window to tuck the others away", True),
+      I("windows.gap", "Gap around snapped windows", 8, 0, 40, 2, unit="px")),
+  ),
+
+  page("apps", "Apps", "apps", "Which app opens what, and making older apps look and behave like the rest.",
+    sec("Opens with",
+      S("apps.browser", "Web pages", "firefox.desktop"),
+      S("apps.files", "Folders", "thunar.desktop"),
+      S("apps.editor", "Text files", "org.xfce.mousepad.desktop"),
+      S("apps.images", "Images", "imv.desktop"),
+      S("apps.pdf", "PDFs", "org.pwmt.zathura.desktop"),
+      S("apps.video", "Video", "mpv.desktop"),
+      S("apps.music", "Music", "mpv.desktop"),
+      S("apps.mail", "Email links", "org.mozilla.Thunderbird.desktop")),
+    sec("Make every app match",
+      T("apps.gtk", "GTK apps follow night and paper", True, help="Firefox, Thunar, GIMP and most others."),
+      T("apps.qt", "Qt apps follow night and paper", True, help="KDE apps, VLC, OBS."),
+      T("apps.fonts", "One font for every app", True),
+      T("apps.cursor", "One cursor for every app", True)),
+    sec("When apps misbehave",
+      T("windows.strip_follows_app", "Title strip takes the app's own colour", True, help="A terminal's strip is the terminal's background."),
+      T("windows.unredirect", "No tearing in full-screen video and games", True, help="A full-screen app gets the screen directly."),
+      T("windows.remember", "Remember where windows were", True)),
+    sec("In the overview",
+      L("apps.pinned", "Pinned apps", ["app"], "firefox", help="The row under the search field.")),
+    custom="apps"),
+
+  page("power", "Power", "plug", "Locking, the screen going dark, and sleep.",
+    sec("When idle",
+      I("idle.lock", "Lock after", 10, 0, 120, 1, unit="min", help="0 never locks by itself."),
+      I("idle.screen_off", "Screen off after", 15, 0, 120, 1, unit="min"),
+      I("idle.suspend", "Sleep after", 0, 0, 240, 5, unit="min", help="0 never sleeps by itself.")),
+    sec("Lock",
+      T("lock.on_sleep", "Lock before the machine sleeps", True, help="Also when the lid closes."),
+      T("lock.hold_notices", "Hold notifications while locked", True)),
+  ),
+
+  page("notices", "Notifications", "bell", "How notifications look, where they appear, and when they wait.",
+    sec("Notifications",
+      E("notices.corner", "Appear", "top-right", opts(("top-right", "Top right"), ("top-center", "Top middle"), ("bottom-right", "Bottom right"))),
+      I("notices.seconds", "Stay for", 6, 2, 30, 1, unit="s", help="Urgent ones stay until you dismiss them."),
+      T("notices.history", "Keep a history", True)),
+  ),
+
+  page("system", "System & updates", "info", "Updates, the login screen, the X server, and what starts with you.",
+    sec("Updates",
+      E("updates.check", "Look for updates", "daily", opts(("off", "Never"), ("daily", "Every day"), ("weekly", "Every week"))),
+      S("updates.repo", "Get Samurai from", "https://github.com/namidelacruz/samurai.git")),
+    sec("Starts with you",
+      L("autostart", "Also start", ["command"], "nextcloud --background")),
+    custom="system"),
 ]
 
-GROUPS = [("system", "系", "SYSTEM"), ("desktop", "机", "DESKTOP"), ("addons", "追", "ADD-ONS"), ("advanced", "深", "ADVANCED"), ("foot", "他", "OTHER")]
-
-# Settings that are stored and shown but that nothing acts on yet. The hub greys them out and
-# says so, instead of offering a switch that does nothing. Remove a key here when it is built.
-SOON = {
-    "displays.new_windows", "net.auto_repair", "net.hotspot.ssid", "net.hotspot.password", "gpu.mode",
-    "gpu.passthrough.enabled", "shot.freeze", "dictate.enabled", "dictate.engine", "dictate.language",
-    "dictate.api_key", "region.units", "region.weather_place", "frame.titles", "frame.bar.tray",
-    "frame.bar.media", "frame.osd", "start.search.files", "start.confirm_power", "widgets.calendar.enabled",
-    "widgets.calendar.place", "widgets.system.enabled", "widgets.system.place", "widgets.weather.enabled",
-    "widgets.weather.place", "widgets.viz.enabled", "widgets.viz.style", "widgets.viz.bands", "widgets.viz.fps",
-    "lock.show_notices", "lock.media", "idle.dim", "greeter.match_lock", "motion.shell", "incognito.clicks_in_place",
-}
+SOON = set()
 
 def main():
-    out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "shell", "settings.schema.json")
+    out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "settings", "schema.json")
     keys = [i["key"] for p in PAGES for s in p["sections"] for i in s["items"] if i["key"]]
     dup = {k for k in keys if keys.count(k) > 1}
     if dup:
         sys.exit("duplicate keys: %s" % sorted(dup))
-    unknown = SOON - set(keys)
-    if unknown:
-        sys.exit("SOON names settings that do not exist: %s" % sorted(unknown))
     for p in PAGES:
-        for sct in p["sections"]:
-            for i in sct["items"]:
+        for s in p["sections"]:
+            for i in s["items"]:
                 if i["key"] in SOON:
                     i["soon"] = True
-    doc = dict(version=1, groups=[dict(id=g, jp=j, en=e) for g, j, e in GROUPS], pages=PAGES)
+                if i["type"] == "enum":
+                    i["options"] = [o if isinstance(o, dict) else dict(value=o, label=o) for o in i["options"]]
+    os.makedirs(os.path.dirname(out), exist_ok=True)
     with open(out, "w", encoding="utf-8") as f:
-        json.dump(doc, f, ensure_ascii=False, indent=1)
+        json.dump(dict(version=2, pages=PAGES, actions=ACTIONS), f, ensure_ascii=False, indent=1)
         f.write("\n")
-    print("%d pages, %d settings (%d not built yet) -> %s" % (len(PAGES), len(keys), len(SOON), os.path.normpath(out)))
+    # what the overview's search can find
+    idx = [dict(label=i["label"], page=p["id"], where="Settings › " + p["title"]) for p in PAGES for s in p["sections"] for i in s["items"] if i["key"]]
+    idx += [dict(label=p["title"], page=p["id"], where="Settings") for p in PAGES]
+    idx += [dict(label=l, page=pid, where="Settings › " + t) for pid, t, l in [
+        ("network", "Network", "UC-Secure"), ("network", "Network", "eduroam"), ("network", "Network", "Wi-Fi networks"),
+        ("network", "Network", "Repair this connection"), ("look", "Look", "Wallpaper"), ("system", "System & updates", "Login screen"),
+        ("system", "System & updates", "X server (X.Org / XLibre)"), ("sound", "Sound", "Output device"), ("sound", "Sound", "Microphone")]]
+    with open(os.path.join(os.path.dirname(out), "settings-index.json"), "w", encoding="utf-8") as f:
+        json.dump(idx, f, ensure_ascii=False, indent=1)
+    print("%d pages, %d settings -> %s" % (len(PAGES), len(keys), os.path.normpath(out)))
 
 if __name__ == "__main__":
     main()

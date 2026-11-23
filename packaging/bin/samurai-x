@@ -1,0 +1,27 @@
+#!/bin/sh
+# samurai-x CLIENT [ARGS…]: starts an X server on this console with CLIENT as its only client and
+# waits for it. Used for the login screen and for the desktop. It picks a free display number,
+# makes a private access cookie (so no other local user can read the screen or the keys), keeps the
+# server on this VT (-keeptty, so logind sees one session) and never listens on the network.
+# Works with X.Org and with XLibre: both install /usr/bin/X and the same Xorg.wrap rules.
+set -u
+[ $# -ge 1 ] || { echo "usage: samurai-x CLIENT [ARGS…]" >&2; exit 2; }
+for need in xinit xauth; do command -v "$need" >/dev/null 2>&1 || { echo "samurai-x: $need is not installed" >&2; exit 3; }; done
+d=0
+while [ -e "/tmp/.X$d-lock" ] || [ -e "/tmp/.X11-unix/X$d" ]; do d=$((d + 1)); done
+vt=${XDG_VTNR:-}
+if [ -z "$vt" ]; then
+    t=$(tty 2>/dev/null); case "$t" in /dev/tty[0-9]*) vt=${t#/dev/tty};; esac
+fi
+dir=${XDG_RUNTIME_DIR:-/tmp}
+auth=$(mktemp "$dir/samurai-xauth.XXXXXX") || exit 1
+trap 'rm -f "$auth"' EXIT INT TERM HUP
+cookie=$(mcookie 2>/dev/null || od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
+xauth -q -f "$auth" add ":$d" . "$cookie" || exit 1
+export XAUTHORITY="$auth"
+client=$1; shift
+case "$client" in /*) ;; *) client=$(command -v "$client") || { echo "samurai-x: $client not found" >&2; exit 3; };; esac
+server=$(command -v X || command -v Xorg) || { echo "samurai-x: no X server (X.Org or XLibre) is installed" >&2; exit 3; }
+set -- "$client" "$@" -- "$server" ":$d" -auth "$auth" -nolisten tcp -keeptty -background none
+[ -n "$vt" ] && set -- "$@" "vt$vt"
+xinit "$@"

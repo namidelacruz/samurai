@@ -1,2 +1,0 @@
-module Quickshell.Services.Greetd
-singleton Greetd 1.0 Greetd.qml
