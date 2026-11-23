@@ -18,16 +18,16 @@ fn home() -> PathBuf {
 fn xdg_config() -> PathBuf {
     std::env::var_os("XDG_CONFIG_HOME").filter(|v| !v.is_empty()).map(PathBuf::from).unwrap_or_else(|| home().join(".config"))
 }
-fn have(prog: &str) -> bool {
+pub fn have(prog: &str) -> bool {
     std::env::var("PATH").unwrap_or_default().split(':').any(|d| Path::new(d).join(prog).is_file())
 }
-fn run(cmd: &[&str]) -> bool {
+pub fn run(cmd: &[&str]) -> bool {
     if cmd.is_empty() || !have(cmd[0]) {
         return false;
     }
     Command::new(cmd[0]).args(&cmd[1..]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok_and(|s| s.success())
 }
-fn output(cmd: &[&str]) -> Option<String> {
+pub fn output(cmd: &[&str]) -> Option<String> {
     if !have(cmd[0]) {
         return None;
     }
@@ -35,13 +35,13 @@ fn output(cmd: &[&str]) -> Option<String> {
     o.status.success().then(|| String::from_utf8_lossy(&o.stdout).to_string())
 }
 /// Start a program detached from us (daemons the session keeps).
-fn daemon(cmd: &[&str]) {
+pub fn daemon(cmd: &[&str]) {
     if cmd.is_empty() || !have(cmd[0]) {
         return;
     }
     let _ = Command::new("setsid").arg("-f").args(cmd).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status();
 }
-fn running(name: &str) -> bool {
+pub fn running(name: &str) -> bool {
     output(&["pgrep", "-x", name]).is_some_and(|o| !o.trim().is_empty())
 }
 
@@ -689,7 +689,10 @@ fn auto_scale(log: &mut Vec<String>) {
 }
 
 pub fn session_start() -> Result<Vec<String>, String> {
+    // the fast checks first (a damaged settings file is put right before anything reads it)
+    let quick = crate::doctor::run(true);
     let mut log = apply()?;
+    log.extend(quick.iter().filter(|f| f.state != crate::doctor::State::Ok).map(|f| format!("doctor: {}: {}", f.what, f.detail)));
     auto_scale(&mut log);
     displays(&mut log);
     // the first login: a short setup (shortcuts, look, Wi-Fi); skipping it counts as done

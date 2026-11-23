@@ -10,12 +10,14 @@ ColumnLayout {
     readonly property real s: core.scale
     property var info: core.system()
     property bool busy: false
+    property string doctor: ""
     spacing: 20 * s
     Connections {
         target: core
         function onDone(tag, code, text) {
             if (tag.indexOf("sys:") !== 0) return
             sys.busy = false
+            if (tag === "sys:doctor") { sys.doctor = text; return }
             win.say(text || (code === 0 ? "Done." : "That did not work."), code !== 0)
             sys.info = core.system(); core.reload()
         }
@@ -50,6 +52,21 @@ ColumnLayout {
                 }
             }
         }
+    }
+    Card {
+        title: "Check and repair"
+        RowLayout {
+            x: 16 * s; width: parent.width - 32 * s; height: 64 * s; spacing: 12 * s
+            Text { Layout.fillWidth: true; wrapMode: Text.Wrap; color: c.dim; font.pixelSize: 12.5 * s
+                   text: "Looks for what commonly goes wrong (a damaged settings file, a helper that stopped, sound, Wi-Fi, disk space) and puts right what it safely can. Nothing of yours is deleted." }
+            Btn { text: sys.busy ? "Checking…" : "Check and repair"; primary: true; enabled: !sys.busy; onClicked: { sys.busy = true; sys.doctor = ""; core.run("sys:doctor", ["samurai", "doctor"]) } }
+        }
+    }
+    Rectangle {
+        visible: sys.doctor !== ""
+        Layout.fillWidth: true; implicitHeight: docText.implicitHeight + 20 * s
+        radius: 10 * s; color: c.chrome; border.color: c.line
+        Text { id: docText; x: 10 * s; y: 10 * s; width: parent.width - 20 * s; text: sys.doctor; color: c.text; font.family: "JetBrains Mono"; font.pixelSize: 11.5 * s; wrapMode: Text.Wrap }
     }
     Text {
         Layout.fillWidth: true; wrapMode: Text.Wrap; color: c.dim; font.pixelSize: 12.5 * s

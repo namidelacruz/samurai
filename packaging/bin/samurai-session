@@ -50,12 +50,33 @@ echo "$(date): Samurai on $DISPLAY ($("$BIN/samurai" xserver 2>/dev/null | head 
 ENVF=${SAMURAI_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/samurai}/session.env
 [ -f "$ENVF" ] && . "$ENVF" && share_env && command -v dbus-update-activation-environment >/dev/null 2>&1 &&
     dbus-update-activation-environment --systemd XCURSOR_THEME XCURSOR_SIZE QT_ENABLE_HIGHDPI_SCALING QT_SCALE_FACTOR_ROUNDING_POLICY 2>/dev/null
-start=$(date +%s)
-"$BIN/samurai-wm"; rc=$?
-echo "$(date): samurai-wm left ($rc)"
-if [ "$rc" != 0 ] && [ $(( $(date +%s) - start )) -lt 10 ]; then
-    # the window manager could not start: give a terminal to look at the log instead of a black screen
-    echo "samurai-wm failed at start; opening a rescue terminal (close it to log out)"
-    for t in alacritty xterm; do command -v "$t" >/dev/null 2>&1 && exec "$t" -e sh -c "echo 'Samurai could not start. Log: $LOG'; tail -n 30 '$LOG'; exec \$SHELL"; done
-fi
-exit $rc
+# the window manager: started again if it crashes, so a crash never logs you out. After three
+# crashes within a minute it starts in safe mode (no animations, no transparency, no effects);
+# if that crashes too, a terminal opens with the log instead of a black screen.
+crashes=""
+safe=0
+while :; do
+    start=$(date +%s)
+    SAMURAI_WM_SAFE=$safe "$BIN/samurai-wm"; rc=$?
+    ran=$(( $(date +%s) - start ))
+    echo "$(date): samurai-wm left (code $rc after ${ran}s$( [ "$safe" = 1 ] && echo ', in safe mode'))"
+    # 0: you logged out (or the X server went away): the session ends
+    [ "$rc" = 0 ] && exit 0
+    now=$(date +%s)
+    recent=""
+    for t in $crashes $now; do [ $((now - t)) -lt 60 ] && recent="$recent $t"; done
+    crashes=$recent
+    n=$(echo $crashes | wc -w)
+    if [ "$n" -ge 3 ] && [ "$safe" = 1 ]; then
+        echo "samurai-wm keeps crashing, even in safe mode; opening a rescue terminal (close it to log out)"
+        "$BIN/samurai" doctor --quick 2>&1 | tail -n 4
+        for t in alacritty xterm; do command -v "$t" >/dev/null 2>&1 && exec "$t" -e sh -c "echo 'Samurai keeps crashing. Log: $LOG'; echo 'Try: samurai doctor'; tail -n 30 '$LOG'; exec \$SHELL"; done
+        exit "$rc"
+    fi
+    if [ "$n" -ge 3 ]; then
+        echo "samurai-wm crashed $n times in a minute: starting it in safe mode"
+        safe=1
+        crashes=""
+    fi
+    sleep $((n > 3 ? 3 : n))
+done

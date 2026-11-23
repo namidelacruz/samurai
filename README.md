@@ -244,6 +244,24 @@ and are never written to a log. `samurai greeter remove` (or `./install.sh --uni
 the file again; a file of your own with that name is never touched. Without NetworkManager the
 Wi-Fi button simply does not appear.
 
+## When something goes wrong
+
+Samurai puts right what it safely can by itself:
+
+- **`samurai doctor`** (or Settings › System › Check and repair) looks for what commonly goes
+  wrong and fixes it: a damaged settings file (moved aside, the last good copy put back), values
+  that are not valid, missing folders, X's log folder, app settings, helpers that stopped
+  (app look, notices, the password prompt), sound, the campus Wi-Fi. It names what needs root
+  (NetworkManager or Bluetooth not running, the lock screen's password check, the login screen's
+  settings) with the command that fixes it, warns about broken app entries of your own and a
+  nearly full disk, and deletes nothing. What it did is in `~/.local/state/samurai/doctor.log`.
+  The quick part runs at every login.
+- **The window manager restarts itself** if it crashes, so a crash does not log you out. After
+  three crashes in a minute it starts in safe mode (no animations, no transparency); if that
+  crashes too, a terminal opens with the log.
+- **The login screen** retries in safe mode (see below), and Settings and the login screen
+  fall back to defaults for any value they cannot read.
+
 ## Several screens
 
 Plug a screen in or out at any time: Samurai picks the change up without a restart, and windows

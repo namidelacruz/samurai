@@ -1,6 +1,7 @@
 //! samurai: settings, config generation and the small jobs behind the Samurai desktop (X11).
 //! The window manager itself is samurai-wm; Wi-Fi campus setup and repair is `shadow wifi`.
 
+mod doctor;
 mod misc;
 mod seal;
 mod store;
@@ -25,6 +26,7 @@ const HELP: &str = "samurai — the settings behind the Samurai desktop
   samurai xserver                 which X server runs: X.Org or XLibre
   samurai status                  battery, network, sound, update (JSON)
   samurai update check|install
+  samurai doctor [--quick]        check what commonly goes wrong, and put it right
   samurai pin APP                 pin an app first in the overview (again: unpin)
   samurai greeter apply           set up the login screen (asks for your password)
   samurai version";
@@ -77,6 +79,11 @@ fn main() {
                 Ok(_) => Err("nothing was changed".into()),
                 Err(e) => Err(format!("pkexec: {e}")),
             }
+        }
+        ["doctor", rest @ ..] => {
+            let quick = rest.contains(&"--quick");
+            let v = doctor::run(quick);
+            Ok(doctor::report(&v, rest.contains(&"--json")))
         }
         ["pin", app] => {
             // pin an app first in the overview's list, or unpin it (the overview's right-click)

@@ -238,7 +238,20 @@ pub fn path() -> PathBuf {
 }
 
 /// Load the config. A broken file never stops the WM: the error is returned beside the defaults.
+/// The settings, and what was wrong with the file if anything. In safe mode (the session sets
+/// SAMURAI_WM_SAFE=1 after repeated crashes) the effects are off: no animations, no transparency.
 pub fn load() -> (Config, Option<String>) {
+    let (mut c, e) = load_file();
+    if std::env::var("SAMURAI_WM_SAFE").is_ok_and(|v| v == "1") {
+        c.look.motion = "off".into();
+        c.windows.opacity_active = 1.0;
+        c.windows.opacity_inactive = 1.0;
+        c.windows.unredirect_fullscreen = false;
+    }
+    (c, e)
+}
+
+fn load_file() -> (Config, Option<String>) {
     let p = path();
     let text = match std::fs::read_to_string(&p) {
         Ok(t) => t,

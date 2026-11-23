@@ -18,6 +18,9 @@ sh tests/x_start.sh; result $?
 part "login screen failure paths"
 sh tests/login_failures.sh; result $?
 
+part "window manager crashes (restart, safe mode, rescue)"
+sh tests/session_crashes.sh; result $?
+
 part "window manager in Xvfb"
 cargo build --release -q -p samurai-wm && python3 tests/wm_xvfb.py; result $?
 

@@ -181,7 +181,14 @@ pub fn set(key: &str, v: Value) -> Result<(), String> {
 
 pub fn save(u: &Map<String, Value>) -> Result<(), String> {
     let text = serde_json::to_string_pretty(&Value::Object(u.clone())).map_err(|e| e.to_string())? + "\n";
-    atomic_write(&settings_file(), &text).map_err(|e| format!("{}: {e}", settings_file().display()))
+    atomic_write(&settings_file(), &text).map_err(|e| format!("{}: {e}", settings_file().display()))?;
+    // the last good copy, for `samurai doctor` to restore if the file is ever damaged
+    let _ = atomic_write(&good_copy(), &text);
+    Ok(())
+}
+
+pub fn good_copy() -> PathBuf {
+    config_dir().join("settings.json.good")
 }
 
 /// Back to defaults: one key, one page (by id), or everything ("all").
