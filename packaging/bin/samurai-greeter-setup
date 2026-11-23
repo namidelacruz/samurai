@@ -34,13 +34,25 @@ OWNER=${2:-}; [ -n "$OWNER" ] || { [ -z "${PKEXEC_UID:-}" ] || OWNER=$(id -nu "$
 # exit 3 = a part is missing: nothing is changed
 missing() { echo "$1 is not installed: the login screen was left alone" >&2; exit 3; }
 command -v greetd >/dev/null 2>&1 || missing greetd
-command -v agreety >/dev/null 2>&1 || missing "agreety (greetd's text login, the safety net)"
 command -v xinit >/dev/null 2>&1 || missing "xinit (xorg-xinit)"
 command -v xauth >/dev/null 2>&1 || missing "xauth (xorg-xauth)"
 { command -v X || command -v Xorg; } >/dev/null 2>&1 || missing "an X server (X.Org or XLibre)"
 python3 -c 'import PySide6.QtQuick' >/dev/null 2>&1 || missing "PySide6 (pyside6)"
 GUSER=$(greeter_user) || { echo "no greeter user (greeter / greetd / _greetd): the login screen was left alone" >&2; exit 3; }
 [ -x /opt/samurai/bin/samurai-greeter-run ] && [ -f /opt/samurai/greeter/greeter.py ] || { echo "Samurai is not installed in /opt/samurai" >&2; exit 3; }
+
+# self-check: the login screen must load (normal and safe mode), as the user greetd runs it as,
+# before greetd is made the login manager. If it does not, nothing is changed.
+selfcheck() {
+    for safe in 0 1; do
+        out=$(cd / && timeout 60 runuser -u "$GUSER" -- env -i PATH=/usr/bin:/bin HOME=/ XDG_RUNTIME_DIR=/tmp \
+              SAMURAI_GREETER_FAKE=1 SAMURAI_GREETER_CHECK=1 SAMURAI_GREETER_SAFE=$safe QT_QPA_PLATFORM=offscreen \
+              QT_QUICK_BACKEND=software python3 /opt/samurai/greeter/greeter.py 2>&1)
+        echo "$out" | grep -q "check ok" || { echo "the login screen failed its self-check (safe mode $safe):" >&2; echo "$out" | tail -n 8 >&2; return 1; }
+    done
+}
+command -v runuser >/dev/null 2>&1 || missing "runuser (util-linux)"
+selfcheck || { echo "the login screen was left alone" >&2; exit 3; }
 
 mkdir -p /etc/samurai /usr/share/samurai /etc/greetd
 # the login screen shows the public decoy drawing, never the owner's one-time seal: it is on

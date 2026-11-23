@@ -15,6 +15,9 @@ rc=0; for f in install.sh packaging/bin/*; do sh -n "$f" || { echo "   $f"; rc=1
 part "starting X (login screen user with / as home)"
 sh tests/x_start.sh; result $?
 
+part "login screen failure paths"
+sh tests/login_failures.sh; result $?
+
 part "window manager in Xvfb"
 cargo build --release -q -p samurai-wm && python3 tests/wm_xvfb.py; result $?
 

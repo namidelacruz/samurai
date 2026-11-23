@@ -22,7 +22,7 @@ Window {
     property bool questionSecret: true
     Connections {
         target: core
-        function onSaid(text, isBad) { w.msg = text; w.bad = isBad; w.question = ""; pw.text = ""; pw.forceActiveFocus(); if (isBad) shake.start() }
+        function onSaid(text, isBad) { w.msg = text; w.bad = isBad; w.question = ""; pw.text = ""; pw.forceActiveFocus(); if (isBad && !safeMode) shake.start() }
         function onAsked(text, secret) { w.question = text; w.questionSecret = secret; w.msg = ""; w.bad = false; pw.text = ""; pw.forceActiveFocus() }
     }
 

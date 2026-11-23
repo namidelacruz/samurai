@@ -1,19 +1,62 @@
 #!/bin/sh
 # What greetd runs as its greeter user: the Samurai login screen in its own X server.
-# If it cannot start or dies at once, greetd's text login takes over, so a broken graphical login
-# can never lock you out.
-LOG=/tmp/samurai-greeter.$(id -u).log
-export SAMURAI_GREETER_DONE=/tmp/samurai-greeter.$(id -u).done
-rm -f "$SAMURAI_GREETER_DONE"
-start=$(date +%s)
-if [ -f /opt/samurai/greeter/greeter.py ] && python3 -c 'import PySide6' >/dev/null 2>&1; then
-    QT_QPA_PLATFORM=xcb QT_QUICK_CONTROLS_STYLE=Basic \
-        /opt/samurai/bin/samurai-x /usr/bin/python3 /opt/samurai/greeter/greeter.py > "$LOG" 2>&1
+#
+# It never drops to a text login. If the login screen cannot start or stops, it tries again:
+#   1. the normal login screen;
+#   2. after two quick failures in a row: safe mode (no wallpaper, no animations, drawing done
+#      by the processor instead of the graphics card), which avoids most driver problems;
+#   3. if that fails too, it keeps trying, waiting a little longer each time (up to 30 s), so a
+#      problem that clears by itself (a slow graphics driver, a late disk) still ends at a login.
+# Every attempt is written to /tmp/samurai-greeter.UID.log (the last five runs are kept as .1 … .5).
+#
+# Exit codes: 0 after a login (greetd then starts the session); anything else lets greetd start
+# this script again.
+PREFIX=${SAMURAI_PREFIX:-/opt/samurai}
+UIDN=$(id -u)
+BASE=${SAMURAI_GREETER_STATE:-/tmp/samurai-greeter.$UIDN}
+LOG=$BASE.log
+LONG=${SAMURAI_GREETER_LONG:-20}          # a run this long (seconds) was a working login screen
+MAX=${SAMURAI_GREETER_MAX_TRIES:-0}       # tests only: give up after this many tries (0 = never)
+STEP=${SAMURAI_GREETER_BACKOFF:-2}        # seconds added to the wait after each failure
+export SAMURAI_GREETER_DONE=$BASE.done
+
+# keep the last few logs
+i=4; while [ $i -ge 1 ]; do [ -f "$LOG.$i" ] && mv -f "$LOG.$i" "$LOG.$((i + 1))"; i=$((i - 1)); done
+[ -f "$LOG" ] && mv -f "$LOG" "$LOG.1"
+: > "$LOG" 2>/dev/null || LOG=/dev/null
+say() { printf '%s %s\n' "$(date '+%H:%M:%S')" "$*" >> "$LOG"; }
+
+fails=0; tries=0
+while :; do
+    tries=$((tries + 1))
+    rm -f "$SAMURAI_GREETER_DONE"
+    if [ $fails -ge 2 ]; then mode=safe; else mode=normal; fi
+    say "attempt $tries ($mode mode)"
+    start=$(date +%s)
+    if [ "$mode" = safe ]; then
+        SAMURAI_GREETER_SAFE=1 QT_QUICK_BACKEND=software LIBGL_ALWAYS_SOFTWARE=1 \
+        QT_XCB_GL_INTEGRATION=none QT_QPA_PLATFORM=xcb QT_QUICK_CONTROLS_STYLE=Basic \
+            "$PREFIX/bin/samurai-x" /usr/bin/python3 "$PREFIX/greeter/greeter.py" >> "$LOG" 2>&1
+    else
+        QT_QPA_PLATFORM=xcb QT_QUICK_CONTROLS_STYLE=Basic \
+            "$PREFIX/bin/samurai-x" /usr/bin/python3 "$PREFIX/greeter/greeter.py" >> "$LOG" 2>&1
+    fi
     rc=$?
-    # a login happened: greetd starts the session now
-    [ -f "$SAMURAI_GREETER_DONE" ] && { rm -f "$SAMURAI_GREETER_DONE"; exit 0; }
-    # it ran a while and then ended (restart, power off…): greetd shows it again
-    [ $(( $(date +%s) - start )) -lt 8 ] || exit $rc
-fi
-echo "The Samurai login screen could not start (detail: $LOG). Text login:"
-exec agreety --cmd /opt/samurai/bin/samurai-session
+    ran=$(( $(date +%s) - start ))
+    if [ -f "$SAMURAI_GREETER_DONE" ]; then
+        rm -f "$SAMURAI_GREETER_DONE"
+        say "login accepted; greetd starts the session"
+        exit 0
+    fi
+    if [ $ran -ge "$LONG" ]; then
+        # it worked for a while and then ended (restart, power off, or a crash later on):
+        # greetd starts a fresh login screen
+        say "login screen ended after ${ran}s (code $rc)"
+        exit "$rc"
+    fi
+    fails=$((fails + 1))
+    say "login screen stopped after ${ran}s (code $rc); failure $fails"
+    if [ "$MAX" -gt 0 ] && [ $tries -ge "$MAX" ]; then say "giving up after $tries tries (test limit)"; exit 1; fi
+    wait=$(( (fails - 1) * STEP )); [ $wait -le 30 ] || wait=30
+    [ $wait -le 0 ] || sleep "$wait"
+done

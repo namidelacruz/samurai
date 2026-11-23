@@ -3,14 +3,23 @@
 #   samurai-session              from a console or greetd: start X here, then the desktop in it
 #   samurai-session --run CMD    the same for another session's command (from /usr/share/xsessions)
 # Inside a running X server (a display manager that starts X itself) it skips the first step.
-BIN=/opt/samurai/bin
+BIN=${SAMURAI_PREFIX:-/opt/samurai}/bin
 LOGDIR=${XDG_STATE_HOME:-$HOME/.local/state}/samurai
 mkdir -p "$LOGDIR"
 LOG=$LOGDIR/session.log
 if [ -z "${DISPLAY:-}" ] && [ "${1:-}" != --inner ]; then
     # keep the last session's log, start a new one
     [ -f "$LOG" ] && mv -f "$LOG" "$LOG.old"
-    exec "$BIN/samurai-x" "$BIN/samurai-session" --inner "$@" >> "$LOG" 2>&1
+    start=$(date +%s)
+    "$BIN/samurai-x" "$BIN/samurai-session" --inner "$@" >> "$LOG" 2>&1
+    rc=$?
+    # from a console (not greetd) say what happened, then go back to the shell: never loop
+    if [ "$rc" != 0 ] && [ $(( $(date +%s) - start )) -lt 15 ] && [ -t 1 ]; then
+        echo "Samurai could not start (code $rc). The last lines of $LOG:"
+        tail -n 12 "$LOG" | sed 's/^/  /'
+        echo "Help: 'If the login screen does not start' in Samurai's README, or run: samurai doctor"
+    fi
+    exit "$rc"
 fi
 [ "${1:-}" = --inner ] && shift
 export XDG_SESSION_TYPE=x11

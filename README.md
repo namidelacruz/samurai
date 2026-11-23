@@ -145,6 +145,19 @@ button.
 
 ## If the login screen does not start
 
+The login screen never drops you to a text login. If it cannot start, it tries again; after two
+quick failures it switches to **safe mode** (no wallpaper, no animations, drawing done without the
+graphics card), which gets past most driver problems; if that fails too it keeps retrying, waiting
+a little longer each time (up to 30 seconds). Each attempt is logged in
+`/tmp/samurai-greeter.<id>.log`, with the five runs before it kept as `.1` … `.5`. Before
+Samurai makes greetd your login manager, it checks that the login screen loads, in both modes,
+as greetd's own user; if it does not, your old login manager stays.
+
+If Samurai's desktop itself cannot start, you go back to the login screen. Started by hand from a
+console (`samurai-session`), it prints what went wrong and returns to the shell.
+
+### The "Cannot open log file" error
+
 **Symptom:** instead of the login screen you get a text login, or a screen ending in
 
 ```

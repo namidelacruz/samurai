@@ -8,14 +8,26 @@ it is sent, and nothing is written to disk.
 
 Config: /etc/samurai/greeter.json  { "ground": "night", "users": [...], "wall": "...svg" }
 Test without greetd: SAMURAI_GREETER_FAKE=1 (password "samurai" works).
+SAMURAI_GREETER_SAFE=1: safe mode (no wallpaper, no animations; the launcher also picks software
+drawing). SAMURAI_GREETER_CHECK=1: load the screen, then leave with 0 (the setup's self-check).
+
+Any failure ends this program with a non-zero code, so samurai-greeter-run can try safe mode or
+again: it never hangs and never shows a half-drawn screen.
 """
-import json, os, socket, struct, subprocess, sys
+import json, os, socket, struct, subprocess, sys, traceback
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QTimer, QUrl, Property, Signal, Slot
-from PySide6.QtGui import QGuiApplication, QCursor
-from PySide6.QtQml import QQmlApplicationEngine
-from PySide6.QtQuick import QQuickWindow  # noqa: F401  (windows come back as QQuickWindow)
+try:
+    from PySide6.QtCore import QObject, QTimer, QUrl, Property, Signal, Slot
+    from PySide6.QtGui import QGuiApplication, QCursor
+    from PySide6.QtQml import QQmlApplicationEngine
+    from PySide6.QtQuick import QQuickWindow  # noqa: F401  (windows come back as QQuickWindow)
+except Exception as e:  # PySide6 missing or broken: say so and let the launcher handle it
+    print(f"samurai-greeter: PySide6 cannot be loaded ({e})", file=sys.stderr)
+    sys.exit(4)
+
+SAFE = os.environ.get("SAMURAI_GREETER_SAFE") == "1"
+GREETD_TIMEOUT = 90  # seconds; PAM may wait a while (a fingerprint, a key), but never forever
 
 HERE = Path(__file__).resolve().parent
 SETTINGS_QML = Path(os.environ.get("SAMURAI_SETTINGS_QML", HERE.parent / "settings" / "qml"))
@@ -35,6 +47,7 @@ class Greetd:
     """greetd's IPC: a u32 length (native order) and a JSON message, each way."""
     def __init__(self, path):
         self.s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.s.settimeout(GREETD_TIMEOUT)
         self.s.connect(path)
 
     def ask(self, msg):
@@ -71,6 +84,31 @@ class Fake:
         return {"type": "success"}
 
 
+def load_conf(path):
+    """The login screen's settings, checked one by one: anything missing or wrong becomes the
+    default, so a damaged file can never stop the login screen."""
+    try:
+        raw = json.loads(path.read_text())
+    except (OSError, ValueError, UnicodeDecodeError) as e:
+        if path.exists():
+            print(f"samurai-greeter: {path} unreadable ({e}); using defaults", file=sys.stderr)
+        raw = {}
+    if not isinstance(raw, dict):
+        raw = {}
+    conf = {"ground": "night", "users": [], "wall": "", "scale": 1.0}
+    if raw.get("ground") in ("night", "paper"):
+        conf["ground"] = raw["ground"]
+    if isinstance(raw.get("users"), list):
+        conf["users"] = [u for u in raw["users"] if isinstance(u, str) and u and len(u) < 64][:50]
+    if isinstance(raw.get("wall"), str) and not SAFE:
+        conf["wall"] = raw["wall"]
+    try:
+        conf["scale"] = min(3.0, max(0.75, float(raw.get("scale", 1.0))))
+    except (TypeError, ValueError):
+        pass
+    return conf
+
+
 def sessions():
     out = [dict(name="Samurai", cmd=["/opt/samurai/bin/samurai-session"])]
     for d in ("/usr/share/xsessions",):
@@ -96,10 +134,7 @@ class Core(QObject):
 
     def __init__(self):
         super().__init__()
-        try:
-            self.conf = json.loads(CONF.read_text())
-        except (OSError, ValueError):
-            self.conf = {}
+        self.conf = load_conf(CONF)
         self._users = self.conf.get("users") or []
         self._sessions = sessions()
         self._busy = False
@@ -149,13 +184,16 @@ class Core(QObject):
     @Slot(str, str, result=str)
     def icon(self, name, color):
         color = color[:7] if color.startswith("#") else "#888888"
-        cache = Path(os.environ.get("XDG_RUNTIME_DIR") or "/tmp") / "samurai-greeter-icons"
-        cache.mkdir(parents=True, exist_ok=True)
-        f = cache / f"{name}-{color.lstrip('#')}.svg"
-        if not f.exists():
-            body = ICONS.get(name, '<circle cx="12" cy="12" r="8"/>')
-            f.write_text(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="{color}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">{body}</svg>')
-        return QUrl.fromLocalFile(str(f)).toString()
+        try:
+            cache = Path(os.environ.get("XDG_RUNTIME_DIR") or "/tmp") / f"samurai-greeter-icons-{os.getuid()}"
+            cache.mkdir(parents=True, exist_ok=True)
+            f = cache / f"{name}-{color.lstrip('#')}.svg"
+            if not f.exists():
+                body = ICONS.get(name, '<circle cx="12" cy="12" r="8"/>')
+                f.write_text(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="{color}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">{body}</svg>')
+            return QUrl.fromLocalFile(str(f)).toString()
+        except OSError:
+            return ""  # no icon is better than no login screen
 
     asked = Signal(str, bool)  # a further question from the login rules (a code…), secret or not
 
@@ -225,9 +263,15 @@ class Core(QObject):
                     self.g = None
             msg = "Wrong user or password." if r.get("error_type") == "auth_error" else (r.get("description") or "The session could not start.")
             self.said.emit(msg, True)
-        except (OSError, ValueError, ConnectionError) as e:
+        except (OSError, ValueError, ConnectionError, KeyError, TypeError, struct.error) as e:
+            # greetd went away or answered nonsense: drop the connection, say so, stay usable
+            try:
+                if self.g is not None and hasattr(self.g, "s"):
+                    self.g.s.close()
+            except OSError:
+                pass
             self.g = None
-            self.said.emit(f"The login service did not answer ({e}).", True)
+            self.said.emit(f"The login service did not answer ({e.__class__.__name__}). Try again.", True)
         finally:
             self._pw = ""
             self._busy = False
@@ -253,16 +297,24 @@ class Core(QObject):
 
 def main():
     os.environ.setdefault("QT_QUICK_CONTROLS_STYLE", "Basic")
+    if SAFE:
+        os.environ.setdefault("QT_QUICK_BACKEND", "software")
     app = QGuiApplication(sys.argv)
     app.setOverrideCursor(QCursor())
     core = Core()
     eng = QQmlApplicationEngine()
     eng.addImportPath(str(SETTINGS_QML))
     eng.rootContext().setContextProperty("core", core)
+    eng.rootContext().setContextProperty("safeMode", SAFE)
     eng.rootContext().setContextProperty("partsDir", QUrl.fromLocalFile(str(SETTINGS_QML) + "/").toString())
     eng.load(QUrl.fromLocalFile(str(HERE / "Greeter.qml")))
     if not eng.rootObjects():
-        sys.exit(1)
+        print("samurai-greeter: the screen could not be loaded", file=sys.stderr)
+        sys.exit(3)
+    if os.environ.get("SAMURAI_GREETER_CHECK") == "1":
+        print("samurai-greeter: check ok" + (" (safe mode)" if SAFE else ""))
+        del eng
+        sys.exit(0)
     shot = os.environ.get("SAMURAI_GREETER_SHOT")
     if shot:  # tests: picture the screen, then leave
         win = eng.rootObjects()[0]
@@ -276,5 +328,19 @@ def main():
     sys.exit(code)
 
 
+def _fatal(kind, value, tb):
+    # an error inside a button press would otherwise be printed and ignored, leaving a screen
+    # that may no longer work: leave instead, so the launcher starts a fresh one
+    traceback.print_exception(kind, value, tb)
+    print("samurai-greeter: stopped after an error", file=sys.stderr)
+    os._exit(5)
+
+
 if __name__ == "__main__":
-    main()
+    sys.excepthook = _fatal
+    try:
+        main()
+    except SystemExit:
+        raise
+    except BaseException:
+        _fatal(*sys.exc_info())
