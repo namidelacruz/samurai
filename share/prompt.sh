@@ -64,3 +64,11 @@ elif [ -n "${ZSH_VERSION:-}" ]; then
     add-zsh-hook preexec __samurai_preexec
     add-zsh-hook precmd __samurai_precmd
 fi
+
+# a short system summary, once per terminal window (Settings › Look › Terminal)
+__samurai_fetch_conf="${XDG_CONFIG_HOME:-$HOME/.config}/samurai/shell/fetch.jsonc"
+if [ -z "${SAMURAI_FETCHED:-}" ] && [ -f "$__samurai_fetch_conf" ] && command -v fastfetch >/dev/null 2>&1 && [ -t 1 ]; then
+    export SAMURAI_FETCHED=1
+    fastfetch -c "$__samurai_fetch_conf" 2>/dev/null
+fi
+unset __samurai_fetch_conf

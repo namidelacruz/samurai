@@ -196,6 +196,13 @@
        "help": ""
       },
       {
+       "key": "term.fetch",
+       "label": "System summary when a terminal opens",
+       "type": "toggle",
+       "default": true,
+       "help": "Samurai's ink helmet and a few lines: system, window manager, X server, memory, Wi-Fi. Once per terminal window."
+      },
+      {
        "key": "term.prompt",
        "label": "Samurai prompt in bash and zsh",
        "type": "toggle",

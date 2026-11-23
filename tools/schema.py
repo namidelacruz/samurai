@@ -46,6 +46,7 @@ PAGES = [
     sec("Terminal",
       T("term.follow", "Terminal colours follow the ground", True),
       F("term.size", "Terminal text size", 11.0, 7.0, 24.0, 0.5, unit="pt"),
+      T("term.fetch", "System summary when a terminal opens", True, help="Samurai's ink helmet and a few lines: system, window manager, X server, memory, Wi-Fi. Once per terminal window."),
       T("term.prompt", "Samurai prompt in bash and zsh", True, help="Folder, git branch and changes, time taken, and the error code only when a command failed."),
       I("term.padding", "Space around the text", 18, 0, 48, 2, unit="px")),
     sec("Fonts",

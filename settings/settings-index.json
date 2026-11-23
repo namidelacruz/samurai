@@ -60,6 +60,11 @@
   "where": "Settings › Look"
  },
  {
+  "label": "System summary when a terminal opens",
+  "page": "look",
+  "where": "Settings › Look"
+ },
+ {
   "label": "Samurai prompt in bash and zsh",
   "page": "look",
   "where": "Settings › Look"

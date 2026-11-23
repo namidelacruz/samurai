@@ -106,6 +106,14 @@ What the installer changes, and what `--uninstall` puts back:
 `--uninstall` leaves packages installed and keeps your Samurai settings and seal in
 `~/.config/samurai`; delete that folder to forget them.
 
+## The terminal
+
+Alacritty in Samurai's colours, with a two-line prompt (folder, git branch and changes, how long a
+command took, the error code when one failed, the time). Each new terminal window starts with a
+short system summary next to Samurai's ink helmet: the system, kernel, desktop, X server (X.Org or
+XLibre), uptime, packages, memory and Wi-Fi (fastfetch, in the accent colour; it follows night
+and paper). Settings › Look › Terminal turns either off.
+
 ## With archinstall (while installing Arch)
 
 archinstall can run commands inside the new system after it has installed it, as root. Samurai's

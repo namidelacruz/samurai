@@ -281,6 +281,42 @@ fn alacritty(p: &Pal, log: &mut Vec<String>) {
 }
 
 pub const PROMPT: &str = include_str!("../../share/prompt.sh");
+pub const LOGO: &str = include_str!("../../share/samurai-logo.txt");
+
+/// "#RRGGBB" → "38;2;R;G;B", the colour form fastfetch takes.
+fn ansi_rgb(hex: &str) -> String {
+    let h = hex.trim_start_matches('#');
+    let v = |i: usize| u8::from_str_radix(h.get(i..i + 2).unwrap_or("80"), 16).unwrap_or(128);
+    format!("38;2;{};{};{}", v(0), v(2), v(4))
+}
+
+/// The system summary a new terminal shows (fastfetch, with Samurai's helmet in the accent).
+/// Written only while the setting is on; the prompt script shows it once per terminal window.
+fn fetch(log: &mut Vec<String>) {
+    let dir = store::config_dir().join("shell");
+    let conf = dir.join("fetch.jsonc");
+    if !store::get_bool("term.fetch") {
+        for f in [&conf] {
+            if std::fs::read_to_string(f).map(|t| t.contains(MARK)).unwrap_or(false) {
+                let _ = std::fs::remove_file(f);
+                log.push(format!("removed {}", f.display()));
+            }
+        }
+        return;
+    }
+    let night = ground() == "night";
+    let p = palette(night);
+    let accent = ansi_rgb(p.accent);
+    let dim = ansi_rgb(p.dim);
+    // the helmet in $1 (accent), the kanji in $2 (dim); the mark line is not part of the logo
+    let art: String = LOGO.lines().enumerate().map(|(i, l)| if i + 1 == LOGO.lines().count() { format!("$2{l}\n") } else { format!("$1{l}\n") }).collect();
+    // fastfetch reads JSONC, so the mark sits in a comment at the top
+    let c = format!(
+        "// {MARK} (Settings › Look › Terminal). Turn it off there.\n{{\n  \"logo\": {{ \"type\": \"data\", \"source\": {}, \"color\": {{ \"1\": \"{accent}\", \"2\": \"{dim}\" }}, \"padding\": {{ \"left\": 1, \"right\": 4, \"top\": 1 }} }},\n  \"display\": {{ \"separator\": \"  \", \"color\": {{ \"keys\": \"{accent}\", \"title\": \"{accent}\" }}, \"key\": {{ \"width\": 10 }} }},\n  \"modules\": [\n    \"title\",\n    {{ \"type\": \"os\", \"key\": \"system\" }},\n    {{ \"type\": \"kernel\", \"key\": \"kernel\" }},\n    {{ \"type\": \"wm\", \"key\": \"desktop\" }},\n    {{ \"type\": \"command\", \"key\": \"x server\", \"text\": \"samurai-xserver status 2>/dev/null | sed -n 's/^X server: //p'\" }},\n    {{ \"type\": \"uptime\", \"key\": \"up\" }},\n    {{ \"type\": \"packages\", \"key\": \"packages\" }},\n    {{ \"type\": \"memory\", \"key\": \"memory\" }},\n    {{ \"type\": \"wifi\", \"key\": \"wi-fi\" }},\n    \"break\",\n    \"colors\"\n  ]\n}}\n",
+        serde_json::Value::String(art)
+    );
+    put(&conf, &c, log);
+}
 
 fn prompt(log: &mut Vec<String>) {
     let file = store::config_dir().join("shell/prompt.sh");
@@ -602,6 +638,7 @@ pub fn apply() -> Result<Vec<String>, String> {
     log.push(format!("wrote {}", wm.display()));
     log.extend(theme(ground()));
     prompt(&mut log);
+    fetch(&mut log);
     input(&mut log);
     night_light(&mut log);
     mime_defaults(&mut log);
@@ -718,6 +755,10 @@ mod t {
         let s = wm_toml();
         assert!(s.contains("[look]") && s.contains("[keys]") && s.contains("terminal = \"alacritty\""));
         assert!(!s.contains("\"\"\""));
+    }
+    #[test]
+    fn fetch_colours() {
+        assert_eq!(ansi_rgb("#93ABEB"), "38;2;147;171;235");
     }
     #[test]
     fn hyprland_set_has_no_repeats() {
