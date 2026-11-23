@@ -12,6 +12,7 @@ mod ipc;
 mod lock;
 mod overview;
 mod status;
+mod taskbar;
 mod theme;
 mod tile;
 mod wm;
@@ -235,7 +236,8 @@ fn pill_state(wm: &Wm) -> String {
     let (h, m, _) = overview::local_time();
     let s = wm.status.get();
     let covered = corner_covered(wm);
-    format!("{h}:{m}|{:?}|{:?}|{}|{:?}|{}|{}|{}|{:?}|{:?}|{}", s.battery, s.ssid, s.wifi_on, s.volume, s.muted, wm.theme.night, wm.ov.open, covered, wm.notice.as_ref().map(|n| n.0.clone()), wm.scale)
+    let tucked = wm.clients.iter().filter(|c| c.tucked).count();
+    format!("{h}:{m}|{:?}|{:?}|{}|{:?}|{}|{}|{}|{:?}|{:?}|{}|{tucked}", s.battery, s.ssid, s.wifi_on, s.volume, s.muted, wm.theme.night, wm.ov.open, covered, wm.notice.as_ref().map(|n| n.0.clone()), wm.scale)
 }
 
 fn corner_covered(wm: &Wm) -> (bool, bool) {
@@ -263,7 +265,11 @@ fn draw_corners(wm: &mut Wm) {
         let dw = wm.fonts.measure(draw::Face::Ui, fs, &date);
         let tw = wm.fonts.measure(draw::Face::UiBold, fs, &time);
         let icons = 3.0 * 15.0 * s + 2.0 * 8.0 * s;
-        let w = (14.0 * s + dw + 12.0 * s + tw + 12.0 * s + icons + 14.0 * s).ceil();
+        // the only sign of minimized windows until the taskbar is called up: a small count
+        let tucked = wm.clients.iter().filter(|c| c.tucked).count();
+        let badge = if wm.cfg.taskbar.on && wm.cfg.taskbar.badge && tucked > 0 { format!("{tucked}") } else { String::new() };
+        let bw = if badge.is_empty() { 0.0 } else { wm.fonts.measure(draw::Face::UiBold, 11.0 * s, &badge) + 12.0 * s + 8.0 * s };
+        let w = (14.0 * s + dw + 12.0 * s + tw + 12.0 * s + icons + bw + 14.0 * s).ceil();
         let hgt = (32.0 * s).ceil();
         if let Some(mut px) = draw::Px::new(w as u32 + 2, hgt as u32 + 2) {
             draw::rrect(&mut px, 1.0, 1.0, w, hgt, hgt / 2.0, th.glass);
@@ -282,6 +288,12 @@ fn draw_corners(wm: &mut Wm) {
                 }
                 draw::icon(&mut px, ic, x, iy, 15.0 * s, th.dim, 1.6);
                 x += 15.0 * s + 8.0 * s;
+            }
+            if !badge.is_empty() {
+                let bwi = bw - 8.0 * s;
+                let bh = 18.0 * s;
+                draw::rrect(&mut px, x, 1.0 + (hgt - bh) / 2.0, bwi, bh, bh / 2.0, th.soft);
+                wm.fonts.draw_centered(&mut px, draw::Face::UiBold, 11.0 * s, x + bwi / 2.0, 1.0 + (hgt - 11.0 * s * 1.25) / 2.0, th.accent, &badge);
             }
             let (x0, y0) = (m.x + m.w - w as i32 - (20.0 * s) as i32, m.y + (16.0 * s) as i32);
             wm.comp.set_layer(&wm.conn, "pill", &px, x0, y0, 1.0);

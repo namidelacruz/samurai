@@ -189,6 +189,9 @@ pub fn wm_toml() -> String {
     if !solid.is_empty() {
         s += &format!("opaque_apps = [{}]\n", solid.join(", "));
     }
+    s += "\n[taskbar]\n";
+    s += &format!("on = {}\ncolumns = {}\nrows = {}\nicon = {}\nspacing = {}\n", b("taskbar.on"), store::get_f64("taskbar.columns") as i64, store::get_f64("taskbar.rows") as i64, store::get_f64("taskbar.icon") as i64, store::get_f64("taskbar.spacing") as i64);
+    s += &format!("position = {}\nlabels = {}\nsort = {}\nbadge = {}\n", q(&g("taskbar.position")), b("taskbar.labels"), q(&g("taskbar.sort")), b("taskbar.badge"));
     s += "\n[apps]\n";
     s += "terminal = \"alacritty\"\n";
     let files = desktop_exec(&g("apps.files"));

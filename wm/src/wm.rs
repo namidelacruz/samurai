@@ -130,6 +130,7 @@ pub struct Wm {
     pub comp: Comp,
     pub ov: overview::Overview,
     pub assist: crate::assist::Assist,
+    pub taskbar: crate::taskbar::Taskbar,
     /// the order tiled windows are laid out in
     pub tile_order: Vec<Window>,
     pub lock: lock::Lock,
@@ -200,6 +201,7 @@ impl Wm {
             comp,
             ov: overview::Overview::default(),
             assist: crate::assist::Assist::default(),
+            taskbar: crate::taskbar::Taskbar::default(),
             tile_order: vec![],
             lock: lock::Lock::default(),
             status: status::Status::start(),
@@ -798,6 +800,9 @@ impl Wm {
         self.set_net_state(c.win);
         self.comp.opening(c.frame);
         self.retile();
+        if self.taskbar.open {
+            self.draw_taskbar();
+        }
     }
 
     pub fn set_net_state(&self, win: Window) {
@@ -1320,6 +1325,11 @@ impl Wm {
             self.assist_click(e.root_x as i32, e.root_y as i32);
             return;
         }
+        if self.taskbar.open {
+            self.conn.allow_events(Allow::ASYNC_POINTER, CURRENT_TIME).ok();
+            self.taskbar_press(e.root_x as i32, e.root_y as i32, e.detail);
+            return;
+        }
         if self.ov.open {
             self.conn.allow_events(Allow::ASYNC_POINTER, CURRENT_TIME).ok();
             self.overview_click(e.root_x as i32, e.root_y as i32, e.detail);
@@ -1376,6 +1386,10 @@ impl Wm {
     }
 
     fn button_release(&mut self, e: ButtonReleaseEvent) {
+        if self.taskbar.open {
+            self.taskbar_release(e.root_x as i32, e.root_y as i32);
+            return;
+        }
         if self.drag.is_some() {
             self.end_drag();
             return;
@@ -1506,6 +1520,8 @@ impl Wm {
                     self.overview_hover(rx, ry);
                 } else if self.assist.open {
                     self.assist_hover(rx, ry);
+                } else if self.taskbar.open {
+                    self.taskbar_hover(rx, ry);
                 }
             }
         }
@@ -1599,6 +1615,10 @@ impl Wm {
         let sym = self.keymap.sym(e.detail, 0);
         if self.assist.open {
             self.assist_key(sym);
+            return;
+        }
+        if self.taskbar.open {
+            self.taskbar_key(sym);
             return;
         }
         if self.ov.open {

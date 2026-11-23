@@ -123,6 +123,22 @@ try:
     msg("focus", "window", str(w[first]["id"])); time.sleep(0.3)
     msg("move", "right"); time.sleep(0.7)
     check("moving a tiled window swaps it with its neighbour", wins()[first]["rect"] != left)
+    # the taskbar for minimized windows: hidden until called up
+    msg("tuck"); time.sleep(0.4)
+    tucked_title = [t for t, v in wins().items() if v.get("tucked")]
+    check("minimizing shows no taskbar by itself", state().get("taskbar") is False and len(tucked_title) == 1)
+    keys("tap", "Super_L", "t"); time.sleep(0.6)
+    st = state()
+    check("Super+T calls it up, with the minimized window in it", st.get("taskbar") is True and st.get("taskbar_items") == 1)
+    if os.environ.get("TASKBAR_SHOT") and shutil.which("import"):
+        subprocess.run(["import", "-window", "root", os.environ["TASKBAR_SHOT"]], env=env)
+    keys("tap", "Return"); time.sleep(0.7)
+    st = state()
+    check("Enter brings it back and the taskbar goes away", st.get("taskbar") is False and st.get("taskbar_items") == 0 and not wins()[tucked_title[0]]["tucked"])
+    msg("taskbar"); time.sleep(0.4)
+    check("the command calls it up too (empty: it says so)", state().get("taskbar") is True)
+    keys("tap", "Escape"); time.sleep(0.4)
+    check("Escape hides it", state().get("taskbar") is False)
     # transparency: the window you are in, and the others
     (tmp / "config/wm.toml").write_text("[windows]\ntiling = true\nopacity_active = 0.95\nopacity_inactive = 0.6\nopaque_apps = [\"terminal\"]\n")
     msg("reload"); time.sleep(0.8)

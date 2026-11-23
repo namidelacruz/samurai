@@ -126,6 +126,31 @@ impl Default for Apps {
     }
 }
 
+/// The taskbar for minimized windows: hidden until called up (Super+T).
+#[derive(Deserialize, Clone, Debug)]
+#[serde(default)]
+pub struct Taskbar {
+    pub on: bool,
+    pub columns: u32,
+    pub rows: u32,
+    /// icon size in px at 100 %
+    pub icon: u32,
+    /// "bottom", "top", "center", "bottom-left", "bottom-right", "top-left", "top-right"
+    pub position: String,
+    pub spacing: u32,
+    pub labels: bool,
+    /// "recent", "name" or "app"
+    pub sort: String,
+    /// a small count on the corner clock while windows are minimized
+    pub badge: bool,
+}
+
+impl Default for Taskbar {
+    fn default() -> Self {
+        Taskbar { on: true, columns: 6, rows: 2, icon: 48, position: "bottom".into(), spacing: 10, labels: true, sort: "recent".into(), badge: true }
+    }
+}
+
 #[derive(Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct Idle {
@@ -145,6 +170,7 @@ impl Default for Idle {
 pub struct Config {
     pub look: Look,
     pub windows: Windows,
+    pub taskbar: Taskbar,
     pub apps: Apps,
     pub idle: Idle,
     pub keys: BTreeMap<String, String>,
@@ -199,7 +225,7 @@ pub fn default_keys() -> BTreeMap<String, String> {
 
 impl Default for Config {
     fn default() -> Self {
-        Config { look: Look::default(), windows: Windows::default(), apps: Apps::default(), idle: Idle::default(), keys: default_keys(), autostart: vec![] }
+        Config { look: Look::default(), windows: Windows::default(), taskbar: Taskbar::default(), apps: Apps::default(), idle: Idle::default(), keys: default_keys(), autostart: vec![] }
     }
 }
 

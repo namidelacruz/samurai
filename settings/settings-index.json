@@ -235,6 +235,51 @@
   "where": "Settings › Mouse & touchpad"
  },
  {
+  "label": "Taskbar for minimized windows",
+  "page": "mouse",
+  "where": "Settings › Mouse & touchpad"
+ },
+ {
+  "label": "Columns",
+  "page": "mouse",
+  "where": "Settings › Mouse & touchpad"
+ },
+ {
+  "label": "Rows",
+  "page": "mouse",
+  "where": "Settings › Mouse & touchpad"
+ },
+ {
+  "label": "Icon size",
+  "page": "mouse",
+  "where": "Settings › Mouse & touchpad"
+ },
+ {
+  "label": "Where it appears",
+  "page": "mouse",
+  "where": "Settings › Mouse & touchpad"
+ },
+ {
+  "label": "Space between icons",
+  "page": "mouse",
+  "where": "Settings › Mouse & touchpad"
+ },
+ {
+  "label": "Names under the icons",
+  "page": "mouse",
+  "where": "Settings › Mouse & touchpad"
+ },
+ {
+  "label": "Order",
+  "page": "mouse",
+  "where": "Settings › Mouse & touchpad"
+ },
+ {
+  "label": "Count on the corner clock",
+  "page": "mouse",
+  "where": "Settings › Mouse & touchpad"
+ },
+ {
   "label": "Window you are in",
   "page": "mouse",
   "where": "Settings › Mouse & touchpad"

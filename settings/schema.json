@@ -625,6 +625,134 @@
      ]
     },
     {
+     "title": "Minimized windows (Super+T)",
+     "items": [
+      {
+       "key": "taskbar.on",
+       "label": "Taskbar for minimized windows",
+       "type": "toggle",
+       "default": true,
+       "help": "Hidden until you call it up: Super+T, or the button in the overview. Minimized windows wait there as icons."
+      },
+      {
+       "key": "taskbar.columns",
+       "label": "Columns",
+       "type": "int",
+       "default": 6,
+       "min": 1,
+       "max": 12,
+       "step": 1,
+       "unit": "",
+       "help": ""
+      },
+      {
+       "key": "taskbar.rows",
+       "label": "Rows",
+       "type": "int",
+       "default": 2,
+       "min": 1,
+       "max": 6,
+       "step": 1,
+       "unit": "",
+       "help": ""
+      },
+      {
+       "key": "taskbar.icon",
+       "label": "Icon size",
+       "type": "int",
+       "default": 48,
+       "min": 24,
+       "max": 96,
+       "step": 4,
+       "unit": "px",
+       "help": ""
+      },
+      {
+       "key": "taskbar.position",
+       "label": "Where it appears",
+       "type": "enum",
+       "default": "bottom",
+       "options": [
+        {
+         "value": "bottom",
+         "label": "Bottom"
+        },
+        {
+         "value": "top",
+         "label": "Top"
+        },
+        {
+         "value": "center",
+         "label": "Middle"
+        },
+        {
+         "value": "bottom-left",
+         "label": "Bottom left"
+        },
+        {
+         "value": "bottom-right",
+         "label": "Bottom right"
+        },
+        {
+         "value": "top-left",
+         "label": "Top left"
+        },
+        {
+         "value": "top-right",
+         "label": "Top right"
+        }
+       ],
+       "help": ""
+      },
+      {
+       "key": "taskbar.spacing",
+       "label": "Space between icons",
+       "type": "int",
+       "default": 10,
+       "min": 0,
+       "max": 40,
+       "step": 2,
+       "unit": "px",
+       "help": ""
+      },
+      {
+       "key": "taskbar.labels",
+       "label": "Names under the icons",
+       "type": "toggle",
+       "default": true,
+       "help": ""
+      },
+      {
+       "key": "taskbar.sort",
+       "label": "Order",
+       "type": "enum",
+       "default": "recent",
+       "options": [
+        {
+         "value": "recent",
+         "label": "Most recent first"
+        },
+        {
+         "value": "name",
+         "label": "By name"
+        },
+        {
+         "value": "app",
+         "label": "By app"
+        }
+       ],
+       "help": ""
+      },
+      {
+       "key": "taskbar.badge",
+       "label": "Count on the corner clock",
+       "type": "toggle",
+       "default": true,
+       "help": "A small number while windows are minimized. Nothing else shows until you call the taskbar up."
+      }
+     ]
+    },
+    {
      "title": "Transparency",
      "items": [
       {

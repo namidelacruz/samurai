@@ -39,6 +39,7 @@ pub const ACTIONS: &[(&str, &str)] = &[
     ("quit", "Log out"),
     ("restart", "Restart the window manager (windows stay open)"),
     ("float", "Float this window, or tile it again"),
+    ("taskbar", "Show the minimized windows"),
     ("focus left", "Focus the window to the left"),
     ("focus right", "Focus the window to the right"),
     ("focus up", "Focus the window above"),
@@ -103,6 +104,9 @@ impl Wm {
             }
             ["restore"] => self.restore(need(focused)?),
             ["float"] => self.toggle_float(need(focused)?),
+            ["taskbar"] | ["taskbar", "toggle"] => self.taskbar_toggle(),
+            ["taskbar", "show"] => self.taskbar_open(),
+            ["taskbar", "hide"] => self.taskbar_close(),
             ["snap", which] => {
                 let w = need(focused)?;
                 self.snap(w, which);
@@ -180,7 +184,7 @@ impl Wm {
             "windows": wins,
             "monitors": self.monitors.iter().map(|m| [m.x, m.y, m.w, m.h]).collect::<Vec<_>>(),
             "overview": self.ov.open, "query": self.ov.query,
-            "assist": self.assist.open, "ov_zone": if self.ov.zone == 1 { "apps" } else { "windows" }, "ov_sel": self.ov.sel, "ov_cols": self.ov.app_cols, "ov_apps": self.ov.apps.len(), "locked": self.lock.locked,
+            "assist": self.assist.open, "taskbar": self.taskbar.open, "taskbar_items": self.taskbar_windows().len(), "ov_zone": if self.ov.zone == 1 { "apps" } else { "windows" }, "ov_sel": self.ov.sel, "ov_cols": self.ov.app_cols, "ov_apps": self.ov.apps.len(), "locked": self.lock.locked,
             "ground": if self.theme.night { "night" } else { "paper" }, "scale": self.scale,
             "config_error": self.cfg_error,
         })

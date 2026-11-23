@@ -17,6 +17,12 @@ the screen itself (it is its own compositor, like Hyprland or niri on Wayland). 
   resizing a tiled window floats it. Settings › Windows › "Tile new windows" turns it off, and
   then every window floats, snaps to halves and quarters, and gets **snap assist**: snap one
   window to a side and the others are offered for the rest of the screen.
+- **A taskbar you call up.** Minimized windows wait in a taskbar that is not on screen: `Super+T`
+  (or the button in the overview, or `samurai-wm msg taskbar`) brings it up as a grid of their
+  icons. Click or Enter brings one back; right-click offers Restore and Close; drag an icon onto
+  another to reorder. Escape, the same key or a click outside hides it again. The grid's columns,
+  rows, icon size, position, spacing, labels and order are in Settings › Windows; the only sign
+  of it otherwise is a small count on the corner clock (which can be turned off).
 - **See-through windows.** Settings › Windows › Transparency: how solid the window you are in
   is, and the others (slightly see-through by default, 94 %). Video and image viewers (mpv, imv,
   vlc) stay solid, and you can add any app to that list; full-screen windows are always solid.

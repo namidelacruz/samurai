@@ -63,6 +63,8 @@ pub enum Hot {
     PassGo,
     /// the footer of an open list: its Settings page
     ListSettings(&'static str),
+    /// the "n minimized" button: the taskbar
+    Taskbar,
     Blank,
 }
 
@@ -710,6 +712,10 @@ impl Wm {
                 }
             }
             (Some(Hot::PassGo), _) => self.send_password(),
+            (Some(Hot::Taskbar), _) => {
+                self.overview_close(None);
+                self.taskbar_open();
+            }
             (Some(Hot::PassField), _) => {}
             (Some(Hot::ListSettings(page)), _) => {
                 status::spawn(&format!("{} --page {}", self.cfg.apps.settings, page));
@@ -993,26 +999,17 @@ impl Wm {
             hot.push((*r, Hot::Card(*fr)));
         }
 
-        // the shelf: tucked-away windows
-        let tucked: Vec<(Window, String)> = self.clients.iter().filter(|c| c.tucked).map(|c| (c.win, if c.title.is_empty() { c.class.clone() } else { c.title.clone() })).collect();
-        if !tucked.is_empty() && !searching {
-            let y = m.h as f32 - 150.0 * s;
-            f.draw_centered(&mut px, Face::UiBold, 11.5 * s, cx, y, th.dim, "TUCKED AWAY");
-            let chips: Vec<(Window, String, f32)> = tucked.iter().take(8).map(|(w, t)| {
-                let t = f.fit(Face::Ui, 13.0 * s, t, 220.0 * s);
-                let w2 = f.measure(Face::Ui, 13.0 * s, &t) + 32.0 * s;
-                (*w, t, w2)
-            }).collect();
-            let total: f32 = chips.iter().map(|c| c.2).sum::<f32>() + (chips.len() as f32 - 1.0) * 10.0 * s;
-            let mut x0 = cx - total / 2.0;
-            for (w, t, cw) in chips {
-                let r = Rect::new(x0 as i32, (y + 26.0 * s) as i32, cw as i32, (40.0 * s) as i32);
-                draw::rrect(&mut px, r.x as f32, r.y as f32, r.w as f32, r.h as f32, 20.0 * s, if is_hover(&hot) { th.raised } else { th.glass });
-                draw::rrect_line(&mut px, r.x as f32, r.y as f32, r.w as f32, r.h as f32, 20.0 * s, th.line, 1.0);
-                f.draw(&mut px, Face::Ui, 13.0 * s, r.x as f32 + 16.0 * s, r.y as f32 + 11.0 * s, th.text, &t);
-                hot.push((at(r), Hot::Shelf(w)));
-                x0 += cw + 10.0 * s;
-            }
+        // minimized windows wait in the taskbar (hidden until called up): one quiet button
+        let tucked = self.clients.iter().filter(|c| c.tucked).count();
+        if tucked > 0 && !searching && self.cfg.taskbar.on {
+            let label = format!("{tucked} minimized  ·  Super+T");
+            let bw = f.measure(Face::Ui, 12.5 * s, &label) + 40.0 * s;
+            let r = Rect::new((cx - bw / 2.0) as i32, (m.h as f32 - 96.0 * s) as i32, bw as i32, (34.0 * s) as i32);
+            draw::rrect(&mut px, r.x as f32, r.y as f32, r.w as f32, r.h as f32, 17.0 * s, if is_hover(&hot) { th.raised } else { th.glass });
+            draw::rrect_line(&mut px, r.x as f32, r.y as f32, r.w as f32, r.h as f32, 17.0 * s, th.line, 1.0);
+            draw::icon(&mut px, "tuck", r.x as f32 + 14.0 * s, r.y as f32 + 10.0 * s, 14.0 * s, th.dim, 1.6);
+            f.draw(&mut px, Face::Ui, 12.5 * s, r.x as f32 + 34.0 * s, r.y as f32 + 9.0 * s, th.text, &label);
+            hot.push((at(r), Hot::Taskbar));
         }
         let hint = if searching { "Enter opens · Ctrl+Enter opens a new window · arrows move · Esc clears" } else if self.ov.zone == 1 { "Arrows move · Enter opens · right-click pins · Tab: windows · Esc back" } else { "Arrows move · Enter opens · Delete closes · Tab: apps · type to search · Esc back" };
         f.draw_centered(&mut px, Face::Ui, 12.5 * s, cx, m.h as f32 - 44.0 * s, th.dim, hint);
