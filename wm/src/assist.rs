@@ -51,7 +51,7 @@ impl Wm {
             .mru
             .iter()
             .copied()
-            .filter(|w| *w != win && self.client(*w).is_some_and(|o| !o.fullscreen && o.transient.is_none()))
+            .filter(|w| *w != win && self.client(*w).is_some_and(|o| !o.fullscreen && o.transient.is_none() && o.ws == self.ws))
             .take(9)
             .collect();
         if wins.is_empty() {

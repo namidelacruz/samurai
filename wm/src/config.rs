@@ -225,7 +225,7 @@ pub fn default_keys() -> BTreeMap<String, String> {
 
 impl Default for Config {
     fn default() -> Self {
-        Config { look: Look::default(), windows: Windows::default(), taskbar: Taskbar::default(), apps: Apps::default(), idle: Idle::default(), keys: default_keys(), autostart: vec![] }
+        Config { look: Look::default(), windows: Windows::default(), taskbar: Taskbar::default(), apps: Apps::default(), idle: Idle::default(), keys: { let mut k = default_keys(); k.extend(crate::workspace::default_keys()); k }, autostart: vec![] }
     }
 }
 
@@ -244,6 +244,9 @@ pub fn load() -> (Config, Option<String>) {
         Ok(mut c) => {
             // keys in the file are added to (and override) the defaults; "none" turns one off
             let mut keys = default_keys();
+            for (k, a) in crate::workspace::default_keys() {
+                keys.insert(k, a);
+            }
             for (k, v) in c.keys.iter() {
                 keys.insert(k.clone(), v.clone());
             }

@@ -139,6 +139,20 @@ try:
     check("the command calls it up too (empty: it says so)", state().get("taskbar") is True)
     keys("tap", "Escape"); time.sleep(0.4)
     check("Escape hides it", state().get("taskbar") is False)
+    # hidden workspaces: keys only, and not in any list
+    before = {t for t, v in wins().items() if not v.get("tucked")}
+    keys("tap", "Super_L", "Shift_L", "3"); time.sleep(0.5)
+    sent = [t for t, v in wins().items() if v.get("ws") == 3]
+    check("Super+Shift+3 sends the focused window away (you stay)", state().get("ws") == 1 and len(sent) == 1)
+    keys("tap", "Super_L", "3"); time.sleep(0.5)
+    st = state()
+    check("Super+3 goes there: only its window is on screen", st.get("ws") == 3 and [t for t, v in wins().items() if v["focused"]] == sent)
+    keys("tap", "Super_L", "1"); time.sleep(0.5)
+    check("Super+1 comes back", state().get("ws") == 1)
+    listed = subprocess.run([WM, "--keys"], env=env, capture_output=True, text=True).stdout
+    check("the workspace keys are in no list", "orkspace" not in listed and "send" not in listed and "Super + 1" not in listed)
+    # bring the sent window home for the checks that follow
+    keys("tap", "Super_L", "3"); time.sleep(0.4); msg("send", "1"); time.sleep(0.3); keys("tap", "Super_L", "1"); time.sleep(0.5)
     # transparency: the window you are in, and the others
     (tmp / "config/wm.toml").write_text("[windows]\ntiling = true\nopacity_active = 0.95\nopacity_inactive = 0.6\nopaque_apps = [\"terminal\"]\n")
     msg("reload"); time.sleep(0.8)

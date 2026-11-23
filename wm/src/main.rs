@@ -16,6 +16,7 @@ mod taskbar;
 mod theme;
 mod tile;
 mod wm;
+mod workspace;
 mod x;
 
 use comp::{FrameLook, PaintInfo};
@@ -58,7 +59,8 @@ fn main() {
         Some("--keys") => {
             // every shortcut in effect, for Settings: "keys<TAB>action"
             let (c, _) = config::load();
-            let mut rows: Vec<(String, String)> = c.keys.into_iter().collect();
+            // the workspace keys stay out of every list (they are there for those who know them)
+            let mut rows: Vec<(String, String)> = c.keys.into_iter().filter(|(_, a)| !workspace::is_hidden_action(a)).collect();
             rows.sort_by_key(|(k, a)| (actions::ACTIONS.iter().position(|x| a.starts_with(x.0)).unwrap_or(99), k.clone()));
             for (k, a) in rows {
                 let label = actions::ACTIONS.iter().find(|x| x.0 == a).map(|x| x.1.to_string()).unwrap_or(a);
@@ -163,7 +165,7 @@ fn run(wm: &mut Wm) {
     for c in wm.clients.clone() {
         let root = wm.root;
         let _ = x11rb::protocol::xproto::ConnectionExt::reparent_window(&wm.conn, c.win, root, c.rect.x as i16, c.rect.y as i16);
-        if c.tucked {
+        if c.tucked || c.ws != wm.ws {
             let _ = x11rb::protocol::xproto::ConnectionExt::map_window(&wm.conn, c.win);
         }
     }

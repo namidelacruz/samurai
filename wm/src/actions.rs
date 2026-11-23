@@ -55,7 +55,7 @@ impl Wm {
     pub fn neighbour(&self, w: u32, dir: &str) -> Option<u32> {
         let me = self.client(w).map(|c| self.visible_rect(c))?;
         let (cx, cy) = (me.x + me.w / 2, me.y + me.h / 2);
-        self.clients.iter().filter(|c| c.win != w && !c.tucked).filter_map(|c| {
+        self.clients.iter().filter(|c| c.win != w && !c.tucked && c.ws == self.ws).filter_map(|c| {
             let r = self.visible_rect(c);
             let (x, y) = (r.x + r.w / 2, r.y + r.h / 2);
             let (dx, dy) = (x - cx, y - cy);
@@ -105,6 +105,11 @@ impl Wm {
             ["restore"] => self.restore(need(focused)?),
             ["float"] => self.toggle_float(need(focused)?),
             ["taskbar"] | ["taskbar", "toggle"] => self.taskbar_toggle(),
+            ["workspace", n] => self.workspace(n.parse().map_err(|_| "workspace 1-9")?),
+            ["send", n] => {
+                let w = need(focused)?;
+                self.send_to(w, n.parse().map_err(|_| "send 1-9")?);
+            }
             ["taskbar", "show"] => self.taskbar_open(),
             ["taskbar", "hide"] => self.taskbar_close(),
             ["snap", which] => {
@@ -176,7 +181,7 @@ impl Wm {
                     "id": c.win, "frame": c.frame, "title": c.title, "class": c.class,
                     "rect": [c.rect.x, c.rect.y, c.rect.w, c.rect.h], "visible": [v.x, v.y, v.w, v.h],
                     "focused": self.focused == Some(c.win), "tucked": c.tucked, "fullscreen": c.fullscreen,
-                    "filled": c.filled, "snapped": c.snapped, "strip": c.strip, "opacity": (self.window_opacity(c) * 100.0).round() / 100.0, "floating": c.floating,
+                    "filled": c.filled, "snapped": c.snapped, "strip": c.strip, "opacity": (self.window_opacity(c) * 100.0).round() / 100.0, "ws": c.ws, "floating": c.floating,
                 })
             })
             .collect();
@@ -184,7 +189,7 @@ impl Wm {
             "windows": wins,
             "monitors": self.monitors.iter().map(|m| [m.x, m.y, m.w, m.h]).collect::<Vec<_>>(),
             "overview": self.ov.open, "query": self.ov.query,
-            "assist": self.assist.open, "taskbar": self.taskbar.open, "taskbar_items": self.taskbar_windows().len(), "ov_zone": if self.ov.zone == 1 { "apps" } else { "windows" }, "ov_sel": self.ov.sel, "ov_cols": self.ov.app_cols, "ov_apps": self.ov.apps.len(), "locked": self.lock.locked,
+            "assist": self.assist.open, "ws": self.ws, "taskbar": self.taskbar.open, "taskbar_items": self.taskbar_windows().len(), "ov_zone": if self.ov.zone == 1 { "apps" } else { "windows" }, "ov_sel": self.ov.sel, "ov_cols": self.ov.app_cols, "ov_apps": self.ov.apps.len(), "locked": self.lock.locked,
             "ground": if self.theme.night { "night" } else { "paper" }, "scale": self.scale,
             "config_error": self.cfg_error,
         })

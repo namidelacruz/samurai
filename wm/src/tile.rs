@@ -46,6 +46,7 @@ impl Wm {
             && !c.fullscreen
             && !c.filled
             && c.kind == Kind::Normal
+            && c.ws == self.ws
             && c.transient.is_none()
             && !(c.min.0 > 0 && c.min == c.max)
     }

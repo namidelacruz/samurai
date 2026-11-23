@@ -88,6 +88,8 @@ pub struct Client {
     pub floating: bool,
     /// the app's own wish (_NET_WM_WINDOW_OPACITY), 0..1
     pub opacity_hint: Option<f32>,
+    /// the (hidden) workspace it is on, 1..9
+    pub ws: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -131,6 +133,8 @@ pub struct Wm {
     pub ov: overview::Overview,
     pub assist: crate::assist::Assist,
     pub taskbar: crate::taskbar::Taskbar,
+    /// the workspace on screen (1..9; there are no visible workspaces, only keys)
+    pub ws: u32,
     /// the order tiled windows are laid out in
     pub tile_order: Vec<Window>,
     pub lock: lock::Lock,
@@ -202,6 +206,7 @@ impl Wm {
             ov: overview::Overview::default(),
             assist: crate::assist::Assist::default(),
             taskbar: crate::taskbar::Taskbar::default(),
+            ws: 1,
             tile_order: vec![],
             lock: lock::Lock::default(),
             status: status::Status::start(),
@@ -272,7 +277,7 @@ impl Wm {
         x::set_u32s(&self.conn, check, a._NET_SUPPORTING_WM_CHECK, AtomEnum::WINDOW, &[check]);
         self.conn.change_property8(PropMode::REPLACE, check, a._NET_WM_NAME, a.UTF8_STRING, b"Samurai").ok();
         // one desktop, always: apps that ask get a sensible answer
-        x::set_u32s(&self.conn, root, a._NET_NUMBER_OF_DESKTOPS, AtomEnum::CARDINAL, &[1]);
+        x::set_u32s(&self.conn, root, a._NET_NUMBER_OF_DESKTOPS, AtomEnum::CARDINAL, &[crate::workspace::COUNT]);
         x::set_u32s(&self.conn, root, a._NET_CURRENT_DESKTOP, AtomEnum::CARDINAL, &[0]);
         x::set_u32s(&self.conn, root, a._NET_DESKTOP_VIEWPORT, AtomEnum::CARDINAL, &[0, 0]);
         self.conn.change_property8(PropMode::REPLACE, root, a._NET_DESKTOP_NAMES, a.UTF8_STRING, b"Samurai\0").ok();
@@ -472,6 +477,7 @@ impl Wm {
             hover: None,
             floating: false,
             opacity_hint: read_opacity(&self.conn, win, a._NET_WM_WINDOW_OPACITY),
+            ws: self.ws,
         };
         self.place(&mut c, user_pos);
 
@@ -518,7 +524,7 @@ impl Wm {
         self.set_wm_state(win, 1);
         let ext = [b as u32, b as u32, (b + s) as u32, b as u32];
         x::set_u32s(&self.conn, win, a._NET_FRAME_EXTENTS, AtomEnum::CARDINAL, &ext);
-        x::set_u32s(&self.conn, win, a._NET_WM_DESKTOP, AtomEnum::CARDINAL, &[0]);
+        x::set_u32s(&self.conn, win, a._NET_WM_DESKTOP, AtomEnum::CARDINAL, &[self.ws - 1]);
         let allowed = [a._NET_WM_ACTION_CLOSE, a._NET_WM_ACTION_MOVE, a._NET_WM_ACTION_RESIZE, a._NET_WM_ACTION_FULLSCREEN,
                        a._NET_WM_ACTION_MINIMIZE, a._NET_WM_ACTION_MAXIMIZE_HORZ, a._NET_WM_ACTION_MAXIMIZE_VERT];
         x::set_u32s(&self.conn, win, a._NET_WM_ALLOWED_ACTIONS, AtomEnum::ATOM, &allowed);
@@ -791,8 +797,10 @@ impl Wm {
         if !c.tucked {
             return;
         }
+        let here = self.ws;
         if let Some(cm) = self.client_mut(win) {
             cm.tucked = false;
+            cm.ws = here; // brought back here, whichever workspace it was minimized on
         }
         self.conn.map_window(c.win).ok();
         self.conn.map_window(c.frame).ok();
@@ -1635,7 +1643,7 @@ impl Wm {
         }
         // Alt+Tab: walk the focus history while Alt is held
         if sym == x::KS_TAB && state & x::MOD_ALT != 0 {
-            let order: Vec<Window> = self.mru.iter().copied().filter(|w| self.client(*w).is_some()).collect();
+            let order: Vec<Window> = self.mru.iter().copied().filter(|w| self.client(*w).is_some_and(|c| c.ws == self.ws)).collect();
             if order.is_empty() {
                 return;
             }
