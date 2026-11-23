@@ -1,0 +1,85 @@
+#!/bin/sh
+# Turns key login on or off in PAM, as root (Settings runs it through pkexec).
+#   samurai-key-pam enable usb|u2f either|both [--sudo] [--tested USER]
+#   samurai-key-pam disable
+#   samurai-key-pam status
+# either: the key OR your password (the password always keeps working)
+# both:   the key AND your password (two-factor). Refused unless the key was just tested for USER
+#         (--tested, which Settings passes only after a test succeeded; for a USB stick it is
+#         tested again here). Never for sudo.
+# It only adds or removes lines ending in "# samurai-key", in the login screen's PAM file (greetd),
+# the lock screen's (samurai-lock) and, with --sudo in "either" mode, sudo's. Each file is backed up
+# to /etc/samurai/pam-backup first. The console login (/etc/pam.d/login, system-auth) is never
+# touched, so a console (Ctrl+Alt+F2) always takes your password: from there, `sudo
+# samurai-key-pam disable` (or: sudo sed -i '/# samurai-key$/d' /etc/pam.d/greetd
+# /etc/pam.d/samurai-lock /etc/pam.d/sudo) puts everything back.
+set -eu
+PAM=${SAMURAI_PAM_DIR:-/etc/pam.d}
+BACKUP=${SAMURAI_PAM_BACKUP:-/etc/samurai/pam-backup}
+MARK="# samurai-key"
+SAMURAI=${SAMURAI_BIN:-/opt/samurai/bin/samurai}
+
+strip() { # strip FILE: remove our lines
+    [ -f "$1" ] && sed -i "/ $MARK\$/d" "$1"
+}
+insert() { # insert FILE LINE: our line as the first auth line (after the leading comments)
+    f=$1; line=$2
+    [ -f "$f" ] || return 0
+    mkdir -p "$BACKUP"
+    [ -f "$BACKUP/$(basename "$f")" ] || cp -p "$f" "$BACKUP/$(basename "$f")"
+    strip "$f"
+    awk -v l="$line" 'done == 0 && /^[[:space:]]*auth/ { print l; done = 1 } { print } END { if (!done) print l }' "$f" > "$f.samurai-new"
+    chmod --reference="$f" "$f.samurai-new" 2>/dev/null || chmod 0644 "$f.samurai-new"
+    mv -f "$f.samurai-new" "$f"
+}
+
+[ "${1:-status}" = status ] || [ "$(id -u)" = 0 ] || [ -n "${SAMURAI_PAM_DIR:-}" ] || { echo "samurai-key-pam: run as root" >&2; exit 1; }
+case "${1:-status}" in
+status)
+    on=""
+    for f in greetd samurai-lock sudo; do grep -q " $MARK\$" "$PAM/$f" 2>/dev/null && on="$on $f"; done
+    if [ -n "$on" ]; then
+        how=$(grep -h " $MARK\$" "$PAM/greetd" "$PAM/samurai-lock" 2>/dev/null | head -n1)
+        case "$how" in *required*) m="key and password";; *) m="key or password";; esac
+        case "$how" in *pam_u2f*) k="security key";; *) k="USB stick";; esac
+        echo "key login: on ($k, $m) in:$on"
+    else
+        echo "key login: off"
+    fi
+    exit 0;;
+disable)
+    for f in greetd samurai-lock sudo; do strip "$PAM/$f" || true; done
+    echo "key login: off (your password alone works everywhere again)"
+    exit 0;;
+enable)
+    kind=${2:-}; mode=${3:-}; shift 3 2>/dev/null || { echo "usage: samurai-key-pam enable usb|u2f either|both [--sudo] [--tested USER]" >&2; exit 2; }
+    sudo_too=0; tested=""
+    while [ $# -gt 0 ]; do case "$1" in --sudo) sudo_too=1;; --tested) tested=${2:-}; shift;; esac; shift; done
+    case "$kind" in
+        usb) module="pam_exec.so quiet $SAMURAI key check";;
+        u2f) module="pam_u2f.so cue"
+             [ -n "${SAMURAI_PAM_DIR:-}" ] || ls /usr/lib/security/pam_u2f.so >/dev/null 2>&1 || { echo "pam_u2f is not installed (sudo pacman -S pam-u2f)" >&2; exit 3; };;
+        *) echo "kind must be usb or u2f" >&2; exit 2;;
+    esac
+    case "$mode" in
+        either) control=sufficient;;
+        both)
+            control=required
+            [ "$sudo_too" = 0 ] || { echo "two-factor is never set for sudo: a lost key would lock you out of sudo" >&2; exit 4; }
+            [ -n "$tested" ] || { echo "two-factor needs a key that was just tested; nothing was changed" >&2; exit 4; }
+            if [ "$kind" = usb ]; then
+                # test it again now, as that user, before anything depends on it
+                if [ -z "${SAMURAI_PAM_DIR:-}" ]; then
+                    runuser -u "$tested" -- "$SAMURAI" key test >/dev/null 2>&1 || { echo "the stick did not pass the test just now; nothing was changed" >&2; exit 4; }
+                fi
+            fi;;
+        *) echo "mode must be either or both" >&2; exit 2;;
+    esac
+    line="auth $control $module $MARK"
+    insert "$PAM/greetd" "$line"
+    insert "$PAM/samurai-lock" "$line"
+    if [ "$sudo_too" = 1 ]; then insert "$PAM/sudo" "auth sufficient $module $MARK"; else strip "$PAM/sudo" || true; fi
+    echo "key login: on ($kind, $( [ "$mode" = both ] && echo 'key and password' || echo 'key or password' ))"
+    exit 0;;
+*) echo "usage: samurai-key-pam status|disable|enable usb|u2f either|both [--sudo] [--tested USER]" >&2; exit 2;;
+esac

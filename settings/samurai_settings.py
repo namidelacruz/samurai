@@ -286,11 +286,15 @@ class Core(QObject):
 
     @Slot(str, "QVariant")
     def run(self, tag, cmd):
+        if hasattr(cmd, "toVariant"):  # a JavaScript array straight from QML
+            cmd = cmd.toVariant()
         self._run(tag, [str(c) for c in cmd])
 
     @Slot(str, "QVariant", str)
     def runInput(self, tag, cmd, inp):
         """For passwords: they go to the command's stdin, never on its command line."""
+        if hasattr(cmd, "toVariant"):
+            cmd = cmd.toVariant()
         self._run(tag, [str(c) for c in cmd], inp)
 
     @Slot(str, str, result=str)

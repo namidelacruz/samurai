@@ -131,7 +131,7 @@ watch() { # watch LABEL COMMAND…   like step, but the status line names the it
 CORE="xorg-xinit xorg-xauth xorg-xrandr xorg-xinput xorg-xset xorg-xsetroot xorg-xrdb
       alacritty dunst libnotify xsettingsd xss-lock polkit-gnome gammastep maim xclip xdotool
       networkmanager wpa_supplicant pipewire wireplumber brightnessctl playerctl
-      bluez bluez-utils power-profiles-daemon upower fastfetch curl gnupg
+      bluez bluez-utils power-profiles-daemon upower fastfetch curl gnupg pam-u2f
       pyside6 adw-gtk-theme papirus-icon-theme qt5ct qt6ct
       inter-font ttf-jetbrains-mono noto-fonts noto-fonts-cjk noto-fonts-emoji
       xdg-desktop-portal xdg-desktop-portal-gtk xdg-utils xdg-user-dirs
@@ -209,13 +209,14 @@ place() {
         [ ! -d /opt/samurai ] || { rm -rf /opt/samurai.old; mv /opt/samurai /opt/samurai.old; }
         mv /opt/samurai.new /opt/samurai
         mkdir -p /usr/local/bin /usr/share/xsessions /usr/share/applications
-        for b in samurai samurai-wm samurai-settings samurai-xserver; do ln -sfn /opt/samurai/bin/$b /usr/local/bin/$b; done
+        for b in samurai samurai-wm samurai-settings samurai-xserver samurai-key-pam; do ln -sfn /opt/samurai/bin/$b /usr/local/bin/$b; done
         # a shadow command of your own is kept
         [ -e /usr/local/bin/shadow ] && [ ! -L /usr/local/bin/shadow ] || ln -sfn /opt/samurai/bin/shadow /usr/local/bin/shadow
         install -m 0644 /opt/samurai/share/samurai.desktop /usr/share/xsessions/samurai.desktop
         install -m 0644 /opt/samurai/share/samurai-settings.desktop /usr/share/applications/samurai-settings.desktop
         # the lock screen checks passwords with this; a file of your own is kept
-        if [ ! -f /etc/pam.d/samurai-lock ] || grep -q "installed by Samurai" /etc/pam.d/samurai-lock; then
+        # a file of your own is kept, and so is one with key login on (its "# samurai-key" line)
+        if [ ! -f /etc/pam.d/samurai-lock ] || { grep -q "installed by Samurai" /etc/pam.d/samurai-lock && ! grep -q "# samurai-key\$" /etc/pam.d/samurai-lock; }; then
             install -m 0644 /opt/samurai/share/pam.d/samurai-lock /etc/pam.d/samurai-lock
         fi
     ' sh "$S" && rm -rf "$S"
@@ -289,9 +290,10 @@ reload() { # a running Samurai picks the new version up; never fails the install
 remove() {
     $AS_ROOT sh -c '
         [ ! -x /opt/samurai/bin/samurai-greeter-setup ] || /opt/samurai/bin/samurai-greeter-setup --remove || true
+        [ ! -x /opt/samurai/bin/samurai-key-pam ] || /opt/samurai/bin/samurai-key-pam disable || true
         ! grep -q "installed by Samurai" /etc/pam.d/samurai-lock 2>/dev/null || rm -f /etc/pam.d/samurai-lock
         rm -f /usr/share/xsessions/samurai.desktop /usr/share/applications/samurai-settings.desktop
-        for b in samurai samurai-wm samurai-settings samurai-xserver shadow; do
+        for b in samurai samurai-wm samurai-settings samurai-xserver samurai-key-pam shadow; do
             [ "$(readlink /usr/local/bin/$b 2>/dev/null)" != /opt/samurai/bin/$b ] || rm -f /usr/local/bin/$b
         done
         rm -rf /opt/samurai /opt/samurai.old /opt/samurai.new

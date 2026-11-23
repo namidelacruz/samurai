@@ -262,6 +262,39 @@ Samurai puts right what it safely can by itself:
 - **The login screen** retries in safe mode (see below), and Settings and the login screen
   fall back to defaults for any value they cannot read.
 
+## Logging in with a key
+
+Settings › System › Security key lets you log in and unlock with a key, on the login screen and
+the lock screen (and, if you choose, for `sudo`):
+
+- **A FIDO2 security key** (YubiKey, SoloKey, Nitrokey…): "Register a key…" (touch it when it
+  blinks), then "Key or password". It uses `pam_u2f` from Arch's own repositories. This is the
+  safe choice: such a key cannot be copied.
+- **A plain USB stick**: plug it in, open it once in Files, pick it, "Make it my key", then
+  "Key or password". Samurai writes a random secret to a hidden folder on the stick and keeps only
+  a hash of it on the computer, tied to the stick's serial number and filesystem. Every time the
+  stick is used, the secret is replaced. **Be aware that a plain stick is weaker:** anyone who
+  copies it can use the copy once, until you next use your stick. A FIDO2 key has no such gap.
+
+"Key or password" keeps your password working everywhere. "Key and password" (two-factor) asks for
+both; Samurai only allows it right after the key passed a test, and never for `sudo`.
+
+If anything goes wrong, you are never locked out. The console login (`Ctrl+Alt+F2`) is never
+changed and always takes your password alone. From there:
+
+```sh
+sudo samurai-key-pam disable
+```
+
+or, by hand:
+
+```sh
+sudo sed -i '/# samurai-key$/d' /etc/pam.d/greetd /etc/pam.d/samurai-lock /etc/pam.d/sudo
+```
+
+Samurai only ever adds or removes lines ending in `# samurai-key`. The files are backed up to
+`/etc/samurai/pam-backup` first, and `./install.sh --uninstall` turns key login off too.
+
 ## Several screens
 
 Plug a screen in or out at any time: Samurai picks the change up without a restart, and windows

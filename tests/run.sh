@@ -21,6 +21,9 @@ sh tests/login_failures.sh; result $?
 part "window manager crashes (restart, safe mode, rescue)"
 sh tests/session_crashes.sh; result $?
 
+part "key login rules (copies of PAM files)"
+sh tests/key_pam.sh; result $?
+
 part "window manager in Xvfb"
 cargo build --release -q -p samurai-wm && python3 tests/wm_xvfb.py; result $?
 

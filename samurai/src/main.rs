@@ -2,6 +2,7 @@
 //! The window manager itself is samurai-wm; Wi-Fi campus setup and repair is `shadow wifi`.
 
 mod doctor;
+mod key;
 mod misc;
 mod seal;
 mod store;
@@ -26,6 +27,7 @@ const HELP: &str = "samurai — the settings behind the Samurai desktop
   samurai xserver                 which X server runs: X.Org or XLibre
   samurai status                  battery, network, sound, update (JSON)
   samurai update check|install
+  samurai key list|enroll UUID|test|forget   a USB stick as your login key
   samurai doctor [--quick]        check what commonly goes wrong, and put it right
   samurai pin APP                 pin an app first in the overview (again: unpin)
   samurai greeter apply           set up the login screen (asks for your password)
@@ -80,6 +82,12 @@ fn main() {
                 Err(e) => Err(format!("pkexec: {e}")),
             }
         }
+        // a USB stick as a login key (see key.rs); the PAM side is samurai-key-pam
+        ["key", "list"] => Ok(key::list()),
+        ["key", "enroll", uuid] => { let (u, h) = key::who(); key::enroll(&u, &h, uuid) }
+        ["key", "check"] => { let (u, h) = key::who(); key::check(&u, &h, true).map(|_| "ok".into()) }
+        ["key", "test"] => { let (u, h) = key::who(); key::check(&u, &h, true).map(|_| "your stick works as your key".into()) }
+        ["key", "forget"] => { let (_, h) = key::who(); key::forget(&h) }
         ["doctor", rest @ ..] => {
             let quick = rest.contains(&"--quick");
             let v = doctor::run(quick);
