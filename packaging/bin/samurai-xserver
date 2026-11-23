@@ -3,7 +3,8 @@
 # Samurai works the same on X.Org and on XLibre (a fork of the X.Org server that keeps its
 # protocol, drivers and config). Switching swaps system packages, so this never runs on its own:
 # it shows the plan and asks first, and pacman asks again before it removes anything.
-# It never adds a package repository or a signing key for you.
+# It adds XLibre's official Arch repository and signing key only when you say yes, after checking
+# the key's fingerprint against the one XLibre publishes (https://xlibre-arch.github.io).
 set -u
 say() { printf '%s\n' "$*"; }
 ask() { printf '%s [y/N] ' "$1"; read -r a || a=; case "$a" in y|Y|yes) return 0;; esac; return 1; }
@@ -12,6 +13,27 @@ which_server() {
     case "$v" in *XLibre*|*xlibre*) echo XLibre;; *X.Org*|*"X Server"*) echo X.Org;; *) echo none;; esac
 }
 pkg_has() { pacman -Si "$1" >/dev/null 2>&1; }          # in a configured repository
+# XLibre's own Arch repository, as https://xlibre-arch.github.io describes it (checked 2026-11)
+XL_KEY_URL=https://xlibre-arch.github.io/xlibre-archlinux.asc
+XL_KEY_ID=B97F7C613F359424
+XL_SECTION=xlibre-stable
+XL_SERVER='https://packages.xlibre.net/arch/stable/$arch'
+add_repo() { # download the key, check its fingerprint, trust it locally, add the section
+    command -v curl >/dev/null 2>&1 || { say "curl is needed for this."; return 1; }
+    tmp=$(mktemp -d) || return 1
+    curl -fsSL "$XL_KEY_URL" -o "$tmp/key.asc" || { say "Could not download XLibre's key from $XL_KEY_URL."; rm -rf "$tmp"; return 1; }
+    fpr=$(gpg --batch --with-colons --show-keys "$tmp/key.asc" 2>/dev/null | awk -F: '/^fpr:/ {print $10; exit}')
+    case "$fpr" in
+        *"$XL_KEY_ID") say "The key's fingerprint is $fpr: it matches the one XLibre publishes ($XL_KEY_ID).";;
+        *) say "The downloaded key ($fpr) is not the one XLibre publishes ($XL_KEY_ID). Stopped; nothing was changed."; rm -rf "$tmp"; return 1;;
+    esac
+    sudo pacman-key --add "$tmp/key.asc" && sudo pacman-key --lsign-key "$fpr" || { rm -rf "$tmp"; return 1; }
+    rm -rf "$tmp"
+    if ! grep -q "^\[$XL_SECTION\]" /etc/pacman.conf; then
+        sudo cp -p /etc/pacman.conf /etc/pacman.conf.before-xlibre
+        printf '\n# added by samurai-xserver (XLibre, https://xlibre-arch.github.io); samurai-xserver xorg offers to remove it\n[%s]\nServer = %s\n' "$XL_SECTION" "$XL_SERVER" | sudo tee -a /etc/pacman.conf >/dev/null || return 1
+    fi
+}
 aur_helper() { for h in paru yay; do command -v "$h" >/dev/null 2>&1 && { echo "$h"; return; }; done; return 1; }
 # the X driver packages this machine has, as XLibre names them (xf86-input-libinput → xlibre-input-libinput)
 drivers() { pacman -Qq 2>/dev/null | grep -E '^xf86-(input|video)-' | sed 's/^xf86-/xlibre-/'; }
@@ -31,11 +53,19 @@ xlibre)
     say "This replaces the X.Org server packages (xorg-server, xorg-server-common and the xf86-*"
     say "drivers) with their XLibre versions. Samurai, your apps and your settings stay as they are."
     say "The change takes effect the next time X starts (log out, or restart)."
-    say "If X does not start afterwards, the login falls back to a text login; switch back with:"
-    say "    samurai-xserver xorg"
+    say "If X does not start afterwards, the login screen retries in safe mode. From a console"
+    say "(Ctrl+Alt+F2) you can always switch back with:  samurai-xserver xorg"
     say ""
     extra=$(drivers | tr '\n' ' ')
-    if pkg_has xlibre-xserver; then
+    if pkg_has xlibre-meta; then
+        say "XLibre's repository is set up. The plan:"
+        say "    sudo pacman -Syu            (bring the system up to date first, as Arch requires)"
+        say "    sudo pacman -S xlibre-meta  (the server, its drivers and tools; replaces the X.Org ones)"
+        say "(pacman will list what it replaces and ask you to confirm.)"
+        ask "Go ahead?" || { say "Nothing was changed."; exit 0; }
+        sudo pacman -Syu && exec sudo pacman -S xlibre-meta
+        exit 1
+    elif pkg_has xlibre-xserver; then
         # a repository that carries XLibre is already set up in pacman.conf
         set -- xlibre-xserver $extra
         say "A pacman repository with XLibre is set up. The plan:"
@@ -53,23 +83,34 @@ xlibre)
         ask "Go ahead?" || { say "Nothing was changed."; exit 0; }
         exec "$h" -S "$@"
     else
-        say "Neither a pacman repository with XLibre nor an AUR helper (paru, yay) was found, so"
-        say "nothing can be installed from here. Two ways:"
-        say "  1. Add XLibre's own Arch repository (with its signing key) as its project describes:"
-        say "     https://x11libre.net  — then run this again."
-        say "  2. Install an AUR helper (paru or yay), then run this again."
-        say "Samurai does not add repositories or keys on its own."
-        say "Nothing was changed."
+        say "XLibre's own Arch repository is not set up yet. It can be added now, the way XLibre"
+        say "describes it (https://xlibre-arch.github.io):"
+        say "  1. download its signing key and check the fingerprint is $XL_KEY_ID"
+        say "  2. trust that key in pacman (pacman-key --add, --lsign-key)"
+        say "  3. add [$XL_SECTION] to /etc/pacman.conf (a copy of the old file is kept as"
+        say "     /etc/pacman.conf.before-xlibre)"
+        say "  4. sudo pacman -Syu, then sudo pacman -S xlibre-meta (pacman asks before replacing)"
+        say "XLibre is a third-party repository: its packages come from the XLibre project, not Arch."
+        ask "Add XLibre's repository and switch?" || { say "Nothing was changed."; exit 0; }
+        add_repo || { say "The repository was not added."; exit 1; }
+        sudo pacman -Syu && exec sudo pacman -S xlibre-meta
         exit 1
     fi;;
 xorg)
     if [ "$now" = X.Org ]; then say "X.Org already runs this machine. Nothing to do."; exit 0; fi
+    if grep -q "^\[$XL_SECTION\]" /etc/pacman.conf 2>/dev/null; then
+        REMOVE_REPO=1
+    fi
     set -- xorg-server xorg-server-common $(pacman -Qq 2>/dev/null | grep -E '^xlibre-(input|video)-' | sed 's/^xlibre-/xf86-/' | sed 's/-bin$//' | tr '\n' ' ')
     say "Switching the X server back to X.Org. The plan:"
     say "    sudo pacman -S $*"
     say "(pacman will list what it replaces and ask you to confirm.)"
     ask "Go ahead?" || { say "Nothing was changed."; exit 0; }
-    exec sudo pacman -S "$@";;
+    sudo pacman -S "$@" || exit 1
+    if [ "${REMOVE_REPO:-}" = 1 ] && ask "Also remove XLibre's repository from /etc/pacman.conf?"; then
+        sudo sed -i "/^# added by samurai-xserver (XLibre/d; /^\[$XL_SECTION\]\$/,/^Server = /d" /etc/pacman.conf && say "Removed."
+    fi
+    exit 0;;
 *)
     say "usage: samurai-xserver [status|xlibre|xorg]"; exit 2;;
 esac

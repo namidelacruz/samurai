@@ -152,12 +152,18 @@ samurai-xserver xorg     # and back
 ```
 
 The switch replaces system packages, so it shows the plan and asks first, and pacman asks again
-before it removes anything. It uses a pacman repository that carries XLibre if you have added one,
-or an AUR helper (paru, yay) to build XLibre's AUR packages; it maps each installed
-`xf86-input-*` / `xf86-video-*` driver to its `xlibre-*` version. It never adds a repository or
-a signing key for you. If X does not start afterwards, the login falls back to a text login, and
-`samurai-xserver xorg` switches back. Settings › System shows which server runs and has the same
-button.
+before it replaces anything. If XLibre's own Arch repository is not set up yet, it offers to set
+it up exactly as XLibre describes (https://xlibre-arch.github.io): it downloads XLibre's signing
+key, **checks that its fingerprint ends in `B97F7C613F359424`** (the one XLibre publishes) and
+stops if it does not, trusts that key in pacman, adds `[xlibre-stable]` to `/etc/pacman.conf`
+(the old file is kept as `/etc/pacman.conf.before-xlibre`), brings the system up to date
+(`pacman -Syu`, as Arch requires before installing) and installs `xlibre-meta`. XLibre is a
+third-party repository: its packages come from the XLibre project, not from Arch. With the
+repository already set up, or an AUR helper (paru, yay) installed, it uses that instead.
+
+If X does not start afterwards, the login screen retries in safe mode; from a console
+(`Ctrl+Alt+F2`) `samurai-xserver xorg` puts X.Org back, and then offers to remove the XLibre
+repository again. Settings › System shows which server runs and has the same button.
 
 ## If the login screen does not start
 
