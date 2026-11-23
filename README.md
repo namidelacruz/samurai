@@ -90,6 +90,39 @@ What the installer changes, and what `--uninstall` puts back:
 `--uninstall` leaves packages installed and keeps your Samurai settings and seal in
 `~/.config/samurai`; delete that folder to forget them.
 
+## With archinstall (while installing Arch)
+
+archinstall can run commands inside the new system after it has installed it, as root. Samurai's
+installer has a mode for that: `--for-user NAME` installs everything for the user NAME without
+asking for a password, and its log goes to `/var/log/samurai/install.log`.
+
+1. Start `archinstall` as usual. Set up the disk, a user account (the one that will use Samurai),
+   audio (PipeWire) and the network (NetworkManager). Leave the profile as **Minimal**: Samurai
+   brings its own desktop and login screen.
+2. Choose **Save configuration** and save `user_configuration.json`, then leave archinstall.
+3. Add Samurai to the end of that file (replace `nami` with your user name):
+
+   ```json
+   "custom_commands": [
+       "pacman -S --needed --noconfirm git",
+       "curl -fsSL https://raw.githubusercontent.com/namidelacruz/samurai/main/install.sh | sh -s -- --for-user nami"
+   ]
+   ```
+
+   Older archinstall versions spell the key `"custom-commands"`; use whichever spelling the
+   saved file already uses for its other keys.
+4. Install with that file: `archinstall --config user_configuration.json`.
+
+After the first boot, the Samurai login screen greets you. The same options work here as in a
+normal install: add `--no-apps` or `--no-greeter` after `--for-user nami` if you want them.
+
+The same line works from any root shell on a system that is already installed, for example
+inside `arch-chroot`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/namidelacruz/samurai/main/install.sh | sh -s -- --for-user nami
+```
+
 ## X.Org or XLibre
 
 Samurai works the same on both: it needs only what every X server since X.Org 1.20 has

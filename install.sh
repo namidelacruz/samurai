@@ -10,6 +10,8 @@
 #   ./install.sh --no-apps      skip the default apps (browser, files, editor, viewers, mail)
 #   ./install.sh --update       same steps, quieter wording (used by `samurai update install`)
 #   ./install.sh --uninstall    put back what was there before (your Samurai settings stay)
+#   install.sh --for-user NAME  as root, for NAME (archinstall's custom commands, a chroot,
+#                               or any setup with no one at the keyboard): no password asked
 #
 # It installs Samurai to /opt/samurai, links its commands into /usr/local/bin, adds "Samurai" to
 # the sessions list, and (unless --no-greeter) makes greetd with the Samurai login screen the login
@@ -32,28 +34,44 @@ if [ ! -f "$HERE/Cargo.toml" ] || [ ! -d "$HERE/wm" ]; then
     else mkdir -p "$(dirname "$SRC")" && git clone -q --depth 1 -b "$BRANCH" "$REPO" "$SRC"; fi || {
         echo " could not fetch $REPO" >&2; exit 1; }
     # the piped script has no keyboard; the real installer gets the terminal back for passwords
-    if [ -r /dev/tty ] && [ -w /dev/tty ]; then exec sh "$SRC/install.sh" "$@" < /dev/tty; fi
+    if ( : < /dev/tty ) 2>/dev/null; then exec sh "$SRC/install.sh" "$@" < /dev/tty; fi
     exec sh "$SRC/install.sh" "$@"
 fi
 
-LOGDIR=${XDG_STATE_HOME:-$HOME/.local/state}/samurai
-LOG=$LOGDIR/install.log
-mkdir -p "$LOGDIR"; : > "$LOG"
-MODE=install; GREETER=1; PACKAGES=1; APPS=1
-for a in "$@"; do case "$a" in
+MODE=install; GREETER=1; PACKAGES=1; APPS=1; FOR=""
+prev=""
+for a in "$@"; do
+    if [ "$prev" = --for-user ]; then FOR=$a; prev=""; continue; fi
+    case "$a" in
+    --for-user) prev=--for-user;; --for-user=*) FOR=${a#--for-user=};;
     --greeter) GREETER=1;; --no-greeter) GREETER=0;; --no-packages) PACKAGES=0;; --no-apps) APPS=0;;
     --update) MODE=update;; --uninstall) MODE=uninstall;;
     -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0;;
     *) echo "install.sh: unknown option $a" >&2; exit 2;;
 esac; done
+[ "$prev" != --for-user ] || { echo "install.sh: --for-user needs a user name" >&2; exit 2; }
+# as_user CMD…: a step that belongs to the person who will use the desktop
+if [ -n "$FOR" ]; then
+    [ "$(id -u)" = 0 ] || { echo "--for-user is for running as root (for example from archinstall)" >&2; exit 1; }
+    UHOME=$(getent passwd "$FOR" | cut -d: -f6)
+    [ -n "$UHOME" ] && [ -d "$UHOME" ] || { echo "install.sh: there is no user $FOR with a home folder" >&2; exit 1; }
+    as_user() { runuser -u "$FOR" -- env HOME="$UHOME" USER="$FOR" LOGNAME="$FOR" XDG_CONFIG_HOME= XDG_STATE_HOME= XDG_DATA_HOME= "$@"; }
+    LOGDIR=/var/log/samurai
+else
+    as_user() { "$@"; }
+    LOGDIR=${XDG_STATE_HOME:-$HOME/.local/state}/samurai
+fi
+LOG=$LOGDIR/install.log
+mkdir -p "$LOGDIR"; : > "$LOG"
 # an update keeps the choices made at install time
 [ "$MODE" != update ] || [ -f /etc/samurai/greeter.json ] || GREETER=0
-[ "$(id -u)" != 0 ] || { echo "Run install.sh as yourself, not as root: it asks for the password when it needs it." >&2; exit 1; }
+[ "$(id -u)" != 0 ] || [ -n "$FOR" ] || { echo "Run install.sh as yourself, not as root: it asks for the password when it needs it (or, as root for another user: --for-user NAME)." >&2; exit 1; }
 if [ "$MODE" != uninstall ] && ! command -v pacman >/dev/null 2>&1; then
     if [ $PACKAGES = 1 ]; then echo "Samurai's installer is for Arch Linux (pacman). Use --no-packages to install only Samurai." >&2; exit 2; fi
 fi
 # root steps: sudo when there is a terminal, pkexec from the settings window
-if [ -t 1 ] && command -v sudo >/dev/null 2>&1; then AS_ROOT=sudo; elif command -v pkexec >/dev/null 2>&1; then AS_ROOT=pkexec; else AS_ROOT=sudo; fi
+if [ -n "$FOR" ]; then AS_ROOT=""
+elif [ -t 1 ] && command -v sudo >/dev/null 2>&1; then AS_ROOT=sudo; elif command -v pkexec >/dev/null 2>&1; then AS_ROOT=pkexec; else AS_ROOT=sudo; fi
 
 # ── the status line: the only thing on screen ─────────────────────────────────────────────────
 WIDTH=24; STEP=0; TOTAL=1
@@ -133,6 +151,8 @@ xserver_pkgs() {
 sound_pkgs() { pacman -Qq pulseaudio >/dev/null 2>&1 && echo "" || echo "pipewire-pulse"; }
 
 plan_packages() { # writes the list to install and the notes for any pacman does not know
+    # a system just made by pacstrap/archinstall may not have the package lists yet
+    if [ -n "$FOR" ] && [ -z "$(ls /var/lib/pacman/sync 2>/dev/null)" ]; then pacman -Sy --noconfirm || return 1; fi
     want="$BUILD $CORE $(xserver_pkgs) $(sound_pkgs)"
     [ $GREETER = 0 ] || want="$want $LOGIN"
     [ $APPS = 0 ] || want="$want $APPS_LIST"
@@ -213,15 +233,15 @@ services() { # only enables (from the next boot); never starts or stops anything
     return 0
 }
 user_files() {
-    xdg-user-dirs-update 2>/dev/null || true
-    /opt/samurai/bin/samurai apply
+    as_user xdg-user-dirs-update 2>/dev/null || true
+    as_user /opt/samurai/bin/samurai apply
 }
 seal() { # the one-time seal (kept if this machine already has one) and the public decoy
-    /opt/samurai/bin/samurai seal show | grep -q '"forged":true' || /opt/samurai/bin/samurai seal forge > /dev/null || return 1
-    /opt/samurai/bin/samurai seal decoy
+    as_user /opt/samurai/bin/samurai seal show | grep -q '"forged":true' || as_user /opt/samurai/bin/samurai seal forge > /dev/null || return 1
+    as_user /opt/samurai/bin/samurai seal decoy
 }
 greeter() { # exit 3 from the setup = a part is missing: a note, not a failed install
-    $AS_ROOT /opt/samurai/bin/samurai-greeter-setup "$(/opt/samurai/bin/samurai get look.ground 2>/dev/null | tr -d '"' | grep -x 'night\|paper' || echo night)" "$(id -un)" && return 0
+    $AS_ROOT /opt/samurai/bin/samurai-greeter-setup "$(as_user /opt/samurai/bin/samurai get look.ground 2>/dev/null | tr -d '"' | grep -x 'night\|paper' || echo night)" "${FOR:-$(id -un)}" && return 0
     [ $? = 3 ] && { echo "note: LOGIN SCREEN NOT SET UP (see the line above); fix that and run ./install.sh again"; return 0; }
     return 1
 }
@@ -263,7 +283,7 @@ if [ "$MODE" = uninstall ]; then
 fi
 TOTAL=$((7 + 2 * PACKAGES + GREETER))
 # ask for the password once, before the status line starts
-if [ "$AS_ROOT" = sudo ] && [ $TTY = 1 ]; then
+if [ -z "$FOR" ] && [ "$AS_ROOT" = sudo ] && [ $TTY = 1 ]; then
     echo " Samurai needs your password once, to install packages and put files in /opt and /etc."
     sudo -v || { echo " no password given: nothing was changed"; exit 1; }
 fi
@@ -284,7 +304,8 @@ bar "done"; [ $TTY = 1 ] && echo
 rm -f "$LOGDIR/.pkgs"
 NOTES=$(grep -c '^note:' "$LOG" || true)
 if [ "$MODE" = update ]; then echo " Samurai is up to date."; else
-    echo " Samurai is installed. Log out and choose “Samurai” at the login screen."
+    if [ -n "$FOR" ]; then echo " Samurai is installed for $FOR. It starts at the next boot."
+    else echo " Samurai is installed. Log out and choose “Samurai” at the login screen."; fi
     if grep -q "^login screen: set" "$LOG"; then echo " The Samurai login screen replaces your current one from the next boot."
     elif [ $GREETER = 1 ]; then echo " ! The login screen was NOT set up: $(grep -B1 '^note: LOGIN SCREEN' "$LOG" | head -1)"; fi
     echo " X server: $(/opt/samurai/bin/samurai-xserver status | head -n1 | sed 's/^X server: //'). To try XLibre: samurai-xserver xlibre"
