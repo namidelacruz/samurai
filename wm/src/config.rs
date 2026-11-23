@@ -90,11 +90,16 @@ pub struct Windows {
     pub snap_assist: bool,
     /// new windows tile in columns (off: they float)
     pub tiling: bool,
+    /// how solid the focused window and the others are (1 = solid)
+    pub opacity_active: f32,
+    pub opacity_inactive: f32,
+    /// window classes never made see-through
+    pub opaque_apps: Vec<String>,
 }
 
 impl Default for Windows {
     fn default() -> Self {
-        Windows { gap: 8, strip_follows_app: true, focus: "click".into(), snap: true, shake_to_tuck: true, unredirect_fullscreen: true, remember_places: true, snap_assist: true, tiling: true }
+        Windows { gap: 8, strip_follows_app: true, focus: "click".into(), snap: true, shake_to_tuck: true, unredirect_fullscreen: true, remember_places: true, snap_assist: true, tiling: true, opacity_active: 1.0, opacity_inactive: 0.94, opaque_apps: vec!["mpv".into(), "imv".into(), "vlc".into()] }
     }
 }
 

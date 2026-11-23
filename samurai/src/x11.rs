@@ -184,6 +184,11 @@ pub fn wm_toml() -> String {
     s += &format!("snap = {}\nshake_to_tuck = {}\n", b("windows.snap"), b("windows.shake"));
     s += &format!("unredirect_fullscreen = {}\nremember_places = {}\n", b("windows.unredirect"), b("windows.remember"));
     s += &format!("snap_assist = {}\ntiling = {}\n", b("windows.snap_assist"), b("windows.tiling"));
+    s += &format!("opacity_active = {:.2}\nopacity_inactive = {:.2}\n", store::get_f64("windows.opacity_active"), store::get_f64("windows.opacity_inactive"));
+    let solid: Vec<String> = store::get_list("windows.opaque_apps").iter().filter_map(|r| r["app"].as_str().map(|a| q(a.trim()))).collect();
+    if !solid.is_empty() {
+        s += &format!("opaque_apps = [{}]\n", solid.join(", "));
+    }
     s += "\n[apps]\n";
     s += "terminal = \"alacritty\"\n";
     let files = desktop_exec(&g("apps.files"));

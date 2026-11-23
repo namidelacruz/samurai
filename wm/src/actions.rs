@@ -172,7 +172,7 @@ impl Wm {
                     "id": c.win, "frame": c.frame, "title": c.title, "class": c.class,
                     "rect": [c.rect.x, c.rect.y, c.rect.w, c.rect.h], "visible": [v.x, v.y, v.w, v.h],
                     "focused": self.focused == Some(c.win), "tucked": c.tucked, "fullscreen": c.fullscreen,
-                    "filled": c.filled, "snapped": c.snapped, "strip": c.strip,
+                    "filled": c.filled, "snapped": c.snapped, "strip": c.strip, "opacity": (self.window_opacity(c) * 100.0).round() / 100.0, "floating": c.floating,
                 })
             })
             .collect();

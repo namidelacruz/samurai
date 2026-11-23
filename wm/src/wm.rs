@@ -86,6 +86,8 @@ pub struct Client {
     pub hover: Option<u8>,
     /// floated by hand (Super+V, or dragged): left out of the tiling
     pub floating: bool,
+    /// the app's own wish (_NET_WM_WINDOW_OPACITY), 0..1
+    pub opacity_hint: Option<f32>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -467,6 +469,7 @@ impl Wm {
             ignore_unmaps: 0,
             hover: None,
             floating: false,
+            opacity_hint: read_opacity(&self.conn, win, a._NET_WM_WINDOW_OPACITY),
         };
         self.place(&mut c, user_pos);
 
@@ -1193,6 +1196,14 @@ impl Wm {
         if e.window == self.root {
             return;
         }
+        if e.atom == a._NET_WM_WINDOW_OPACITY {
+            let v = read_opacity(&self.conn, e.window, a._NET_WM_WINDOW_OPACITY);
+            if let Some(cm) = self.client_mut(e.window) {
+                cm.opacity_hint = v;
+                self.comp.dirty = true;
+            }
+            return;
+        }
         if e.atom == a._NET_WM_STRUT_PARTIAL || e.atom == a._NET_WM_STRUT {
             let s = x::get_u32s(&self.conn, e.window, e.atom, AtomEnum::CARDINAL);
             if s.len() >= 4 {
@@ -1732,3 +1743,20 @@ fn save_places(p: &HashMap<String, Rect>) {
     std::fs::write(dir.join("places.json"), serde_json::Value::Object(o).to_string()).ok();
 }
 
+/// An app's own opacity wish: _NET_WM_WINDOW_OPACITY, 0..0xffffffff.
+fn read_opacity(conn: &RustConnection, win: Window, atom: Atom) -> Option<f32> {
+    x::get_u32s(conn, win, atom, AtomEnum::CARDINAL).first().map(|v| *v as f32 / u32::MAX as f32)
+}
+
+impl Wm {
+    /// How solid a window is drawn: the focused one and the others each have a setting; full
+    /// screen and "always solid" apps are solid; an app's own wish is multiplied in.
+    pub fn window_opacity(&self, c: &Client) -> f32 {
+        if c.fullscreen || self.lock.locked {
+            return 1.0;
+        }
+        let solid = self.cfg.windows.opaque_apps.iter().any(|a| a.eq_ignore_ascii_case(&c.class) || a.eq_ignore_ascii_case(&c.instance));
+        let base = if solid { 1.0 } else if self.focused == Some(c.win) { self.cfg.windows.opacity_active } else { self.cfg.windows.opacity_inactive };
+        (base * c.opacity_hint.unwrap_or(1.0)).clamp(0.2, 1.0)
+    }
+}

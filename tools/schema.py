@@ -108,6 +108,10 @@ PAGES = [
       T("windows.tiling", "Tile new windows", True, help="New windows open side by side in columns, like Hyprland or niri. Super+V lets one window float. Off: every window floats."),
       T("windows.shake", "Shake a window to tuck the others away", True),
       I("windows.gap", "Gap around snapped windows", 8, 0, 40, 2, unit="px")),
+    sec("Transparency",
+      F("windows.opacity_active", "Window you are in", 1.0, 0.5, 1.0, 0.05, help="1 is solid. Lower lets the ink show through."),
+      F("windows.opacity_inactive", "Other windows", 0.94, 0.5, 1.0, 0.02, help="The windows you are not typing in. 1 is solid."),
+      L("windows.opaque_apps", "Always solid", ["app"], "mpv", help="Apps never made see-through (video, images, games). By their window class, e.g. mpv, imv, firefox.")),
   ),
 
   page("apps", "Apps", "apps", "Which app opens what, and making older apps look and behave like the rest.",

@@ -230,6 +230,21 @@
   "where": "Settings › Mouse & touchpad"
  },
  {
+  "label": "Window you are in",
+  "page": "mouse",
+  "where": "Settings › Mouse & touchpad"
+ },
+ {
+  "label": "Other windows",
+  "page": "mouse",
+  "where": "Settings › Mouse & touchpad"
+ },
+ {
+  "label": "Always solid",
+  "page": "mouse",
+  "where": "Settings › Mouse & touchpad"
+ },
+ {
   "label": "Web pages",
   "page": "apps",
   "where": "Settings › Apps"

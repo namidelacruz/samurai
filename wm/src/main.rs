@@ -324,7 +324,7 @@ fn paint(wm: &mut Wm) {
     let mut frames = HashMap::new();
     for c in &wm.clients {
         let decorated = c.strip;
-        frames.insert(c.frame, FrameLook { inset: wm.border(c), radius: wm.radius(c), shadow: !c.fullscreen && (decorated || c.kind != wm::Kind::Splash) });
+        frames.insert(c.frame, FrameLook { inset: wm.border(c), radius: wm.radius(c), shadow: !c.fullscreen && (decorated || c.kind != wm::Kind::Splash), opacity: wm.window_opacity(c) });
     }
     // the snap preview follows the pointer while a window is dragged to an edge
     match wm.snap_preview {

@@ -17,6 +17,10 @@ the screen itself (it is its own compositor, like Hyprland or niri on Wayland). 
   resizing a tiled window floats it. Settings › Windows › "Tile new windows" turns it off, and
   then every window floats, snaps to halves and quarters, and gets **snap assist**: snap one
   window to a side and the others are offered for the rest of the screen.
+- **See-through windows.** Settings › Windows › Transparency: how solid the window you are in
+  is, and the others (slightly see-through by default, 94 %). Video and image viewers (mpv, imv,
+  vlc) stay solid, and you can add any app to that list; full-screen windows are always solid.
+  Apps that ask for their own transparency get it.
 - **Ink, made once.** The wallpaper is a marbled ink drawing made on your machine from random
   numbers that are thrown away after drawing: nobody, not even Samurai, can make it again. Its
   mark (like `3F2A · 91C0 · 7B44`) sits quietly in a corner of the empty desktop.

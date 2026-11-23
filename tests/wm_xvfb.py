@@ -123,6 +123,16 @@ try:
     msg("focus", "window", str(w[first]["id"])); time.sleep(0.3)
     msg("move", "right"); time.sleep(0.7)
     check("moving a tiled window swaps it with its neighbour", wins()[first]["rect"] != left)
+    # transparency: the window you are in, and the others
+    (tmp / "config/wm.toml").write_text("[windows]\ntiling = true\nopacity_active = 0.95\nopacity_inactive = 0.6\nopaque_apps = [\"terminal\"]\n")
+    msg("reload"); time.sleep(0.8)
+    w = wins()
+    foc = [v for v in w.values() if v["focused"]][0]
+    others = [v for t, v in w.items() if not v["focused"] and t != "Terminal"]
+    check("the focused window and the others get their own opacity", abs(foc["opacity"] - 0.95) < 0.01 and others and all(abs(v["opacity"] - 0.6) < 0.01 for v in others))
+    check("an 'always solid' app stays solid", abs(w["Terminal"]["opacity"] - 1.0) < 0.01)
+    if os.environ.get("OPACITY_SHOT") and shutil.which("import"):
+        subprocess.run(["import", "-window", "root", os.environ["OPACITY_SHOT"]], env=env)
     msg("close"); time.sleep(0.6)
     check("close asks the focused window to leave", len(wins()) == 3)
 finally:

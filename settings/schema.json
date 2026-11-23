@@ -616,6 +616,44 @@
        "help": ""
       }
      ]
+    },
+    {
+     "title": "Transparency",
+     "items": [
+      {
+       "key": "windows.opacity_active",
+       "label": "Window you are in",
+       "type": "float",
+       "default": 1.0,
+       "min": 0.5,
+       "max": 1.0,
+       "step": 0.05,
+       "unit": "",
+       "help": "1 is solid. Lower lets the ink show through."
+      },
+      {
+       "key": "windows.opacity_inactive",
+       "label": "Other windows",
+       "type": "float",
+       "default": 0.94,
+       "min": 0.5,
+       "max": 1.0,
+       "step": 0.02,
+       "unit": "",
+       "help": "The windows you are not typing in. 1 is solid."
+      },
+      {
+       "key": "windows.opaque_apps",
+       "label": "Always solid",
+       "type": "list",
+       "default": [],
+       "columns": [
+        "app"
+       ],
+       "example": "mpv",
+       "help": "Apps never made see-through (video, images, games). By their window class, e.g. mpv, imv, firefox."
+      }
+     ]
     }
    ]
   },

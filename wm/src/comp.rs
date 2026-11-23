@@ -44,6 +44,8 @@ pub struct FrameLook {
     pub inset: i32,
     pub radius: f32,
     pub shadow: bool,
+    /// 1 = solid; less lets what is behind show through (the shadow fades with it)
+    pub opacity: f32,
 }
 
 pub struct Layer {
@@ -769,6 +771,9 @@ impl Comp {
                 (t.rect.h as f32 * k_y).round() as i32,
             );
             if let Some(l) = look {
+                if ov.is_none() {
+                    opacity *= l.opacity;
+                }
                 if l.shadow {
                     let r = l.radius.round() as i32;
                     if let Some((sp, spread)) = self.shadow(conn, vis.w, vis.h, r, info.shadow, info.night) {
