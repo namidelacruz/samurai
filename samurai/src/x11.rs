@@ -183,6 +183,7 @@ pub fn wm_toml() -> String {
     s += &format!("focus = {}\n", q(&g("windows.focus")));
     s += &format!("snap = {}\nshake_to_tuck = {}\n", b("windows.snap"), b("windows.shake"));
     s += &format!("unredirect_fullscreen = {}\nremember_places = {}\n", b("windows.unredirect"), b("windows.remember"));
+    s += &format!("snap_assist = {}\ntiling = {}\n", b("windows.snap_assist"), b("windows.tiling"));
     s += "\n[apps]\n";
     s += "terminal = \"alacritty\"\n";
     let files = desktop_exec(&g("apps.files"));

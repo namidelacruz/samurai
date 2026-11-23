@@ -584,6 +584,20 @@
        "help": "Sides make halves, corners make quarters, the top fills the screen."
       },
       {
+       "key": "windows.snap_assist",
+       "label": "Snap assist",
+       "type": "toggle",
+       "default": true,
+       "help": "After you snap a window to one side, the other windows are offered for the rest of the screen."
+      },
+      {
+       "key": "windows.tiling",
+       "label": "Tile new windows",
+       "type": "toggle",
+       "default": true,
+       "help": "New windows open side by side in columns, like Hyprland or niri. Super+V lets one window float. Off: every window floats."
+      },
+      {
        "key": "windows.shake",
        "label": "Shake a window to tuck the others away",
        "type": "toggle",

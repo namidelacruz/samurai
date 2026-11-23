@@ -86,11 +86,15 @@ pub struct Windows {
     pub shake_to_tuck: bool,
     pub unredirect_fullscreen: bool,
     pub remember_places: bool,
+    /// after snapping to a half or quarter, offer the other windows for the rest
+    pub snap_assist: bool,
+    /// new windows tile in columns (off: they float)
+    pub tiling: bool,
 }
 
 impl Default for Windows {
     fn default() -> Self {
-        Windows { gap: 8, strip_follows_app: true, focus: "click".into(), snap: true, shake_to_tuck: true, unredirect_fullscreen: true, remember_places: true }
+        Windows { gap: 8, strip_follows_app: true, focus: "click".into(), snap: true, shake_to_tuck: true, unredirect_fullscreen: true, remember_places: true, snap_assist: true, tiling: true }
     }
 }
 

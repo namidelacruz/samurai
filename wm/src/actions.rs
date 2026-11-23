@@ -71,8 +71,10 @@ impl Wm {
             return;
         }
         match dir {
-            "left" => self.snap(w, "left"),
-            "right" => self.snap(w, "right"),
+            "left" | "right" => {
+                self.snap(w, dir);
+                self.offer_assist(w, dir);
+            }
             "up" => self.toggle_fill(w),
             _ => self.restore(w),
         }
@@ -99,7 +101,11 @@ impl Wm {
                 self.set_fullscreen(w, !on);
             }
             ["restore"] => self.restore(need(focused)?),
-            ["snap", which] => self.snap(need(focused)?, which),
+            ["snap", which] => {
+                let w = need(focused)?;
+                self.snap(w, which);
+                self.offer_assist(w, which);
+            }
             ["center"] => self.center(need(focused)?),
             ["tuck"] => self.tuck(need(focused)?),
             ["untuck"] => {
@@ -172,7 +178,7 @@ impl Wm {
             "windows": wins,
             "monitors": self.monitors.iter().map(|m| [m.x, m.y, m.w, m.h]).collect::<Vec<_>>(),
             "overview": self.ov.open, "query": self.ov.query,
-            "ov_zone": if self.ov.zone == 1 { "apps" } else { "windows" }, "ov_sel": self.ov.sel, "ov_cols": self.ov.app_cols, "ov_apps": self.ov.apps.len(), "locked": self.lock.locked,
+            "assist": self.assist.open, "ov_zone": if self.ov.zone == 1 { "apps" } else { "windows" }, "ov_sel": self.ov.sel, "ov_cols": self.ov.app_cols, "ov_apps": self.ov.apps.len(), "locked": self.lock.locked,
             "ground": if self.theme.night { "night" } else { "paper" }, "scale": self.scale,
             "config_error": self.cfg_error,
         })

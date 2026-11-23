@@ -125,6 +125,7 @@ pub struct Wm {
     pub snap_preview: Option<Rect>,
     pub comp: Comp,
     pub ov: overview::Overview,
+    pub assist: crate::assist::Assist,
     pub lock: lock::Lock,
     pub status: status::Status,
     pub ipc: Option<ipc::Server>,
@@ -192,6 +193,7 @@ impl Wm {
             snap_preview: None,
             comp,
             ov: overview::Overview::default(),
+            assist: crate::assist::Assist::default(),
             lock: lock::Lock::default(),
             status: status::Status::start(),
             ipc: ipc::Server::bind(),
@@ -1280,6 +1282,11 @@ impl Wm {
     // ── pointer ──────────────────────────────────────────────────────────────────────────
     fn button_press(&mut self, e: ButtonPressEvent) {
         let state = u16::from(e.state);
+        if self.assist.open {
+            self.conn.allow_events(Allow::ASYNC_POINTER, CURRENT_TIME).ok();
+            self.assist_click(e.root_x as i32, e.root_y as i32);
+            return;
+        }
         if self.ov.open {
             self.conn.allow_events(Allow::ASYNC_POINTER, CURRENT_TIME).ok();
             self.overview_click(e.root_x as i32, e.root_y as i32, e.detail);
@@ -1462,6 +1469,8 @@ impl Wm {
                     }
                 } else if self.ov.open {
                     self.overview_hover(rx, ry);
+                } else if self.assist.open {
+                    self.assist_hover(rx, ry);
                 }
             }
         }
@@ -1498,6 +1507,7 @@ impl Wm {
                         cm.restore = Some(cm.rect);
                     }
                     self.snap(win, &t);
+                    self.offer_assist(win, &t);
                 }
             }
             self.send_configure(win);
@@ -1552,6 +1562,10 @@ impl Wm {
     fn key_press(&mut self, e: KeyPressEvent) {
         let state = u16::from(e.state);
         let sym = self.keymap.sym(e.detail, 0);
+        if self.assist.open {
+            self.assist_key(sym);
+            return;
+        }
         if self.ov.open {
             self.overview_key(e.detail, state, sym);
             return;
@@ -1692,6 +1706,10 @@ fn save_places(p: &HashMap<String, Rect>) {
 impl Wm {
     /// Tiling moves a window between columns; until tiling is on this does nothing (false).
     pub fn tile_move(&mut self, _w: Window, _dir: &str) -> bool {
+        false
+    }
+    /// Whether windows are tiled now (then snap assist is not needed).
+    pub fn tiling_on(&self) -> bool {
         false
     }
 }

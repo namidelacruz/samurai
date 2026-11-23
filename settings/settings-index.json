@@ -210,6 +210,16 @@
   "where": "Settings › Mouse & touchpad"
  },
  {
+  "label": "Snap assist",
+  "page": "mouse",
+  "where": "Settings › Mouse & touchpad"
+ },
+ {
+  "label": "Tile new windows",
+  "page": "mouse",
+  "where": "Settings › Mouse & touchpad"
+ },
+ {
   "label": "Shake a window to tuck the others away",
   "page": "mouse",
   "where": "Settings › Mouse & touchpad"

@@ -104,6 +104,8 @@ PAGES = [
     sec("Windows",
       E("windows.focus", "A window takes focus", "click", opts(("click", "when clicked"), ("hover", "when the pointer is over it"))),
       T("windows.snap", "Drag to an edge to snap", True, help="Sides make halves, corners make quarters, the top fills the screen."),
+      T("windows.snap_assist", "Snap assist", True, help="After you snap a window to one side, the other windows are offered for the rest of the screen."),
+      T("windows.tiling", "Tile new windows", True, help="New windows open side by side in columns, like Hyprland or niri. Super+V lets one window float. Off: every window floats."),
       T("windows.shake", "Shake a window to tuck the others away", True),
       I("windows.gap", "Gap around snapped windows", 8, 0, 40, 2, unit="px")),
   ),

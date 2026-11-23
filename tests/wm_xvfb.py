@@ -45,6 +45,16 @@ try:
     msg("snap", "left"); time.sleep(0.5)
     e = wins()["Editor"]; x, y, rw, rh = e["rect"]
     check("snap left fills the left half", e.get("snapped") == "left" and x < 40 and 600 < rw < 740 and rh > 780)
+    check("snap assist offers the other windows for the right half", state().get("assist") is True)
+    import_shot = os.environ.get("ASSIST_SHOT")
+    if import_shot and shutil.which("import"):
+        subprocess.run(["import", "-window", "root", import_shot], env=env)
+    keys("tap", "Return"); time.sleep(0.6)
+    w2 = wins(); picked = [t for t, v in w2.items() if v.get("snapped") == "right"]
+    check("Enter puts the picked window on the right half", state().get("assist") is False and len(picked) == 1 and w2[picked[0]]["focused"])
+    msg("focus", "window", str(w2["Editor"]["id"])); time.sleep(0.3)
+    msg("snap", "left"); time.sleep(0.5)
+    check("with the other side already taken, no assist", state().get("assist") is False)
     msg("tuck"); time.sleep(0.5)
     check("tuck hides it", wins()["Editor"]["tucked"] is True)
     msg("untuck"); time.sleep(0.5)

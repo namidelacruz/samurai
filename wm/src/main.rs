@@ -4,6 +4,7 @@
 //!   samurai-wm --check      read ~/.config/samurai/wm.toml and say whether it is right
 
 mod actions;
+mod assist;
 mod comp;
 mod config;
 mod draw;
