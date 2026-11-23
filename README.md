@@ -238,24 +238,36 @@ and are never written to a log. `samurai greeter remove` (or `./install.sh --uni
 the file again; a file of your own with that name is never touched. Without NetworkManager the
 Wi-Fi button simply does not appear.
 
+## Size of everything (scaling)
+
+At the first login Samurai picks a size from your main screen (about 110 dots per inch counts as
+100 %, in quarter steps from 100 % to 250 %: a 24-inch 1080p screen stays at 100 %, a 14-inch
+1080p laptop gets 150 %, a 13-inch 2560×1600 one 200 %). Change it any time in Settings › Look ›
+Size; it is never changed behind your back after that.
+
+One size reaches everything: the window manager and overview, Settings, the login and lock
+screens, the cursor, the terminal, Qt apps (fractional sizes followed exactly), GTK apps and
+Firefox (through the screen's DPI). The login screen sizes itself from the screen the same way;
+if you picked your own size, `samurai greeter apply` copies it there.
+
+Limits of X11, honestly: there is one size for all monitors (a 4K screen next to a 1080p one
+gets the same size on both), and GTK 3 apps grow their text at fractional sizes such as 125 %
+or 150 % but not their icons; at 200 % and up everything grows. New apps pick a change up; apps
+already open keep their old size until restarted.
+
 ## If the login screen is too small or too big
 
-The login screen runs before anyone has logged in, so it cannot read your own size setting while
-it runs. Instead it uses a copy, `"scale"` in `/etc/samurai/greeter.json`, made when the login
-screen was set up. On a high-resolution screen it can therefore come up tiny, or stay at an old
-size after you change Settings › Look › Size.
-
-**Fix:** set your size in Settings › Look › Size first, then copy it to the login screen (asks for
-your password):
+The login screen picks its size from the screen unless one was set for it. If that guess is off,
+set your size in Settings › Look › Size and copy it to the login screen (asks for your password):
 
 ```sh
 samurai greeter apply
 ```
 
-Or set it directly, for example 1.5 for a 150 % screen (any value from 1 to 2.5):
+Or set it directly, for example 1.5 for 150 % (`"auto"` to let it pick again):
 
 ```sh
-sudo sed -i 's/"scale": *[0-9.]*/"scale": 1.5/' /etc/samurai/greeter.json
+sudo sed -i 's/"scale": *[^,}]*/"scale": 1.5/' /etc/samurai/greeter.json
 ```
 
 Either way the new size shows the next time the login screen starts (log out, or

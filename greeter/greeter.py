@@ -264,18 +264,34 @@ def load_conf(path):
         raw = {}
     if not isinstance(raw, dict):
         raw = {}
-    conf = {"ground": "night", "users": [], "wall": "", "scale": 1.0}
+    conf = {"ground": "night", "users": [], "wall": "", "scale": None}  # None: from the screen
     if raw.get("ground") in ("night", "paper"):
         conf["ground"] = raw["ground"]
     if isinstance(raw.get("users"), list):
         conf["users"] = [u for u in raw["users"] if isinstance(u, str) and u and len(u) < 64][:50]
     if isinstance(raw.get("wall"), str) and not SAFE:
         conf["wall"] = raw["wall"]
-    try:
-        conf["scale"] = min(3.0, max(0.75, float(raw.get("scale", 1.0))))
-    except (TypeError, ValueError):
-        pass
+    if raw.get("scale") not in (None, "auto"):
+        try:
+            conf["scale"] = min(3.0, max(0.75, float(raw["scale"])))
+        except (TypeError, ValueError):
+            pass
     return conf
+
+
+def screen_scale():
+    """The same rule as Samurai's first login: about 110 dots per inch is 100 %; quarter steps,
+    100 % to 250 %. A screen that reports no believable size stays at 100 %."""
+    try:
+        scr = QGuiApplication.primaryScreen()
+        mm = scr.physicalSize().width()
+        px = scr.geometry().width() * scr.devicePixelRatio()
+        if mm <= 50 or px <= 0:
+            return 1.0
+        dpi = px / (mm / 25.4)
+        return min(2.5, max(1.0, round(dpi / 110 * 4) / 4))
+    except Exception:
+        return 1.0
 
 
 def sessions():
@@ -328,10 +344,8 @@ class Core(QObject):
 
     @Property(float, constant=True)
     def scale(self):
-        try:
-            return float(self.conf.get("scale", 1.0))
-        except (TypeError, ValueError):
-            return 1.0
+        v = self.conf.get("scale")
+        return float(v) if v else screen_scale()
 
     @Property("QVariant", constant=True)
     def users(self):

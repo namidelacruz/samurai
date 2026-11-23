@@ -409,6 +409,9 @@ fn toolkits(p: &Pal, log: &mut Vec<String>) {
         }
     }
     // Xft (older apps) and the cursor
+    // what every app started in the session inherits (samurai-session reads this file)
+    let env = format!("# {MARK}: the size of everything, for apps that read it from the environment.\nexport XCURSOR_THEME=Adwaita XCURSOR_SIZE={cursor_px}\n# Qt: follow fractional sizes (125 %, 150 %) exactly instead of rounding them\nexport QT_ENABLE_HIGHDPI_SCALING=1 QT_SCALE_FACTOR_ROUNDING_POLICY=PassThrough\n");
+    put(&store::config_dir().join("session.env"), &env, log);
     let xr = format!("! {MARK}\nXft.dpi: {dpi}\nXft.antialias: 1\nXft.hinting: 1\nXft.hintstyle: hintslight\nXft.rgba: rgb\nXcursor.theme: Adwaita\nXcursor.size: {cursor_px}\n");
     let xr_path = store::config_dir().join("Xresources");
     put(&xr_path, &xr, log);
@@ -651,8 +654,40 @@ pub fn apply() -> Result<Vec<String>, String> {
 
 /// At login, before the window manager starts: settings, screens, and the helpers a session
 /// needs (live theme for GTK, notifications, locking before sleep, password prompts, night light).
+/// A comfortable size for a screen of `px` pixels across `mm` millimetres: about 110 dots per
+/// inch looks like a classic desktop at 100 %; rounded to quarter steps, 100 % to 250 %.
+pub fn scale_for(px: i64, mm: i64) -> f64 {
+    if px <= 0 || mm <= 50 {
+        return 1.0; // no believable size (projectors, virtual screens): leave it at 100 %
+    }
+    let dpi = px as f64 / (mm as f64 / 25.4);
+    ((dpi / 110.0 * 4.0).round() / 4.0).clamp(1.0, 2.5)
+}
+
+/// The first time Samurai starts on this machine, pick the size from the main screen, unless
+/// you have chosen one already. Afterwards it is never changed behind your back.
+fn auto_scale(log: &mut Vec<String>) {
+    let mark = store::state_dir().join("scale-picked");
+    if mark.exists() || store::user().contains_key("look.scale") || std::env::var_os("DISPLAY").is_none() {
+        return;
+    }
+    let Some(q) = output(&["xrandr", "--query"]) else { return };
+    // "eDP-1 connected primary 2560x1600+0+0 (normal left inverted right x axis y axis) 302mm x 189mm"
+    let line = q.lines().find(|l| l.contains(" connected primary")).or_else(|| q.lines().find(|l| l.contains(" connected")));
+    let Some(line) = line else { return };
+    let px = line.split_whitespace().find(|w| w.contains('x') && w.contains('+')).and_then(|g| g.split('x').next()?.parse::<i64>().ok()).unwrap_or(0);
+    let mm = line.split_whitespace().collect::<Vec<_>>().windows(3).rev().find(|w| w[1] == "x" && w[0].ends_with("mm")).and_then(|w| w[0].trim_end_matches("mm").parse::<i64>().ok()).unwrap_or(0);
+    let v = scale_for(px, mm);
+    let _ = store::atomic_write(&mark, &format!("{v}\n"));
+    if (v - 1.0).abs() > 0.01 && store::set("look.scale", Value::from(v)).is_ok() {
+        log.push(format!("size picked from the screen ({px} px over {mm} mm): {:.0} %", v * 100.0));
+        let _ = apply();
+    }
+}
+
 pub fn session_start() -> Result<Vec<String>, String> {
     let mut log = apply()?;
+    auto_scale(&mut log);
     displays(&mut log);
     // the first login: a short setup (shortcuts, look, Wi-Fi); skipping it counts as done
     if !store::config_dir().join("first-setup.done").exists() && have("samurai-settings") {
@@ -755,6 +790,15 @@ mod t {
         let s = wm_toml();
         assert!(s.contains("[look]") && s.contains("[keys]") && s.contains("terminal = \"alacritty\""));
         assert!(!s.contains("\"\"\""));
+    }
+    #[test]
+    fn sizes_from_screens() {
+        assert_eq!(scale_for(1920, 527), 1.0, "24-inch 1080p");
+        assert_eq!(scale_for(1920, 309), 1.5, "14-inch 1080p laptop");
+        assert_eq!(scale_for(3840, 597), 1.5, "27-inch 4K");
+        assert_eq!(scale_for(2560, 302), 2.0, "13-inch 1600p");
+        assert_eq!(scale_for(1920, 0), 1.0, "no size reported");
+        assert_eq!(scale_for(7680, 300), 2.5, "never past 250 %");
     }
     #[test]
     fn fetch_colours() {

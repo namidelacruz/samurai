@@ -46,6 +46,10 @@ export PATH="$BIN:$PATH"
 share_env
 echo "$(date): Samurai on $DISPLAY ($("$BIN/samurai" xserver 2>/dev/null | head -n1))"
 "$BIN/samurai" session-start 2>&1 || echo "session-start reported a problem (the desktop starts anyway)"
+# the size of everything (cursor, Qt rounding), written by samurai apply
+ENVF=${SAMURAI_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/samurai}/session.env
+[ -f "$ENVF" ] && . "$ENVF" && share_env && command -v dbus-update-activation-environment >/dev/null 2>&1 &&
+    dbus-update-activation-environment --systemd XCURSOR_THEME XCURSOR_SIZE QT_ENABLE_HIGHDPI_SCALING QT_SCALE_FACTOR_ROUNDING_POLICY 2>/dev/null
 start=$(date +%s)
 "$BIN/samurai-wm"; rc=$?
 echo "$(date): samurai-wm left ($rc)"

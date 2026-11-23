@@ -59,7 +59,7 @@ selfcheck || { echo "the login screen was left alone" >&2; exit 3; }
 mkdir -p /etc/samurai /usr/share/samurai /etc/greetd
 # the login screen shows the public decoy drawing, never the owner's one-time seal: it is on
 # screen before anyone has proved who they are
-SCALE=1
+SCALE='"auto"'   # the login screen picks its size from the screen, unless you chose one
 if [ -n "$OWNER" ] && home=$(getent passwd "$OWNER" | cut -d: -f6) && [ -n "$home" ]; then
     for g in night paper; do
         src=$home/.config/samurai/seal/decoy-$g.svg
@@ -67,7 +67,7 @@ if [ -n "$OWNER" ] && home=$(getent passwd "$OWNER" | cut -d: -f6) && [ -n "$hom
     done
     # the owner's display scale, so the login is the same size as the desktop
     s=$(sed -n 's/^ *"look.scale" *: *\([0-9.]*\).*/\1/p' "$home/.config/samurai/settings.json" 2>/dev/null | head -n1)
-    case "$s" in [0-9]*) SCALE=$s;; esac
+    case "$s" in [0-9]*) SCALE=$s;; esac   # your own choice in Settings › Look › Size
 fi
 WALL=""; [ -f /usr/share/samurai/greeter-$GROUND.svg ] && WALL=/usr/share/samurai/greeter-$GROUND.svg
 USERS=$(awk -F: '$3 >= 1000 && $3 < 60000 && $7 !~ /(nologin|false)$/ { printf "%s\"%s\"", (n++ ? "," : ""), $1 }' /etc/passwd)
