@@ -130,7 +130,8 @@ watch() { # watch LABEL COMMAND…   like step, but the status line names the it
 # the desktop itself and every feature it has
 CORE="xorg-xinit xorg-xauth xorg-xrandr xorg-xinput xorg-xset xorg-xsetroot xorg-xrdb
       alacritty dunst libnotify xsettingsd xss-lock polkit-gnome gammastep maim xclip xdotool
-      networkmanager pipewire wireplumber brightnessctl playerctl
+      networkmanager wpa_supplicant pipewire wireplumber brightnessctl playerctl
+      bluez bluez-utils power-profiles-daemon upower fastfetch curl gnupg
       pyside6 adw-gtk-theme papirus-icon-theme qt5ct qt6ct
       inter-font ttf-jetbrains-mono noto-fonts noto-fonts-cjk noto-fonts-emoji
       xdg-desktop-portal xdg-desktop-portal-gtk xdg-utils xdg-user-dirs
@@ -219,17 +220,50 @@ place() {
         fi
     ' sh "$S" && rm -rf "$S"
 }
+# the network: every Wi-Fi feature in Samurai goes through NetworkManager. Another manager (iwd,
+# systemd-networkd, dhcpcd…) is only switched off when you agree (asked before the status line
+# starts), or on a fresh system (--for-user). What was on is written down, and --uninstall turns
+# it back on. Changes take effect at the next boot: nothing running is stopped now.
+other_net() {
+    command -v systemctl >/dev/null 2>&1 || return 0
+    for u in iwd systemd-networkd dhcpcd connman netctl wicd; do
+        systemctl is-enabled "$u.service" >/dev/null 2>&1 && printf '%s ' "$u"
+    done
+}
+service_on() { # service_on UNIT LABEL: enable from the next boot, say so
+    if systemctl is-enabled "$1" >/dev/null 2>&1; then echo "on: $2 (already)"
+    elif $AS_ROOT systemctl enable "$1" >/dev/null 2>&1; then echo "on: $2 (from the next boot)"
+    else echo "note: $2 could not be switched on ($1)"; fi
+}
 services() { # only enables (from the next boot); never starts or stops anything now
     command -v systemctl >/dev/null 2>&1 || return 0
     if systemctl list-unit-files NetworkManager.service >/dev/null 2>&1; then
-        other=""
-        for u in iwd systemd-networkd dhcpcd connman netctl wicd; do
-            systemctl is-enabled "$u.service" >/dev/null 2>&1 && other="$other $u"
-        done
-        if systemctl is-enabled NetworkManager.service >/dev/null 2>&1; then echo "NetworkManager: already on"
-        elif [ -n "$other" ]; then echo "note: NetworkManager was not turned on because$other already manages the network; Wi-Fi settings need NetworkManager"
-        else $AS_ROOT systemctl enable NetworkManager.service && echo "NetworkManager: on from the next boot"; fi
+        other=$(other_net | sed "s/ *$//")
+        if [ -n "$other" ] && ! systemctl is-enabled NetworkManager.service >/dev/null 2>&1; then
+            if [ "${SWITCH_NET:-0}" = 1 ]; then
+                $AS_ROOT sh -c 'mkdir -p /etc/samurai && [ -f /etc/samurai/previous-network ] || echo "$1" > /etc/samurai/previous-network' sh "$other"
+                for u in $other; do $AS_ROOT systemctl disable "$u.service" >/dev/null 2>&1 && echo "off: $u (NetworkManager takes over at the next boot)"; done
+                service_on NetworkManager.service "NetworkManager"
+            else
+                echo "note: NetworkManager was not turned on because $other already manages the network; Samurai's Wi-Fi needs NetworkManager (run ./install.sh again and say yes to switch)"
+            fi
+        else
+            service_on NetworkManager.service "NetworkManager"
+        fi
     fi
+    systemctl list-unit-files bluetooth.service >/dev/null 2>&1 && service_on bluetooth.service "Bluetooth"
+    if systemctl list-unit-files power-profiles-daemon.service >/dev/null 2>&1; then
+        if systemctl is-enabled tlp.service >/dev/null 2>&1 || systemctl is-enabled auto-cpufreq.service >/dev/null 2>&1; then
+            echo "note: power profiles left off: tlp or auto-cpufreq already manages power"
+        else
+            service_on power-profiles-daemon.service "power profiles"
+        fi
+    fi
+    # sound: PipeWire runs per user, started when an app needs it (sockets)
+    for u in pipewire.socket pipewire-pulse.socket wireplumber.service; do
+        systemctl --global is-enabled "$u" >/dev/null 2>&1 || $AS_ROOT systemctl --global enable "$u" >/dev/null 2>&1
+    done
+    systemctl --global is-enabled pipewire.socket >/dev/null 2>&1 && echo "on: sound (PipeWire)"
     return 0
 }
 user_files() {
@@ -261,6 +295,12 @@ remove() {
             [ "$(readlink /usr/local/bin/$b 2>/dev/null)" != /opt/samurai/bin/$b ] || rm -f /usr/local/bin/$b
         done
         rm -rf /opt/samurai /opt/samurai.old /opt/samurai.new
+        if [ -f /etc/samurai/previous-network ]; then
+            for u in $(cat /etc/samurai/previous-network); do systemctl enable "$u.service" >/dev/null 2>&1; done
+            systemctl disable NetworkManager.service >/dev/null 2>&1
+            rm -f /etc/samurai/previous-network
+            echo "network: the previous manager is back from the next boot"
+        fi
     '
     # the app settings Samurai wrote (each carries its mark): the apps go back to their own defaults
     cfg=${XDG_CONFIG_HOME:-$HOME/.config}
@@ -282,6 +322,20 @@ if [ "$MODE" = uninstall ]; then
     exit 0
 fi
 TOTAL=$((7 + 2 * PACKAGES + GREETER))
+# switching the network to NetworkManager is asked now, before the status line starts: never
+# silently, never over SSH (the connection you are using could go at the next boot)
+SWITCH_NET=0
+OTHER_NET=$(other_net | sed "s/ *$//")
+if [ -n "$OTHER_NET" ] && command -v systemctl >/dev/null 2>&1 && ! systemctl is-enabled NetworkManager.service >/dev/null 2>&1; then
+    if [ -n "$FOR" ]; then SWITCH_NET=1
+    elif [ $TTY = 1 ] && [ -z "${SSH_CONNECTION:-}" ] && [ "$MODE" != update ]; then
+        echo " Your network is managed by: $OTHER_NET"
+        echo " Samurai's Wi-Fi (settings, login screen, campus networks) needs NetworkManager. Switch to it"
+        printf " from the next boot? (your saved Wi-Fi passwords in the old one are not moved) [y/N] "
+        read -r a < /dev/tty || a=""
+        case "$a" in y|Y|yes) SWITCH_NET=1;; esac
+    fi
+fi
 # ask for the password once, before the status line starts
 if [ -z "$FOR" ] && [ "$AS_ROOT" = sudo ] && [ $TTY = 1 ]; then
     echo " Samurai needs your password once, to install packages and put files in /opt and /etc."
@@ -295,7 +349,7 @@ step "checking this machine" check_needs
 watch "building Samurai" build
 step "preparing files" stage
 step "installing Samurai to /opt/samurai" place
-step "turning on the network service" services
+step "switching on network, Bluetooth, sound and power" services
 step "writing app settings and the terminal style" user_files
 step "forging this machine's seal" seal
 [ $GREETER = 0 ] || step "setting up the login screen" greeter
@@ -310,5 +364,7 @@ if [ "$MODE" = update ]; then echo " Samurai is up to date."; else
     elif [ $GREETER = 1 ]; then echo " ! The login screen was NOT set up: $(grep -B1 '^note: LOGIN SCREEN' "$LOG" | head -1)"; fi
     echo " X server: $(/opt/samurai/bin/samurai-xserver status | head -n1 | sed 's/^X server: //'). To try XLibre: samurai-xserver xlibre"
 fi
+ON=$(grep '^on: ' "$LOG" | sed 's/^on: //' | tr '\n' ',' | sed 's/,$//; s/,/, /g')
+[ -z "$ON" ] || echo " Switched on: $ON."
 [ "$NOTES" = 0 ] || { echo " $NOTES notes (parts skipped or left off):"; grep '^note:' "$LOG" | sed 's/^note: /   · /'; }
 exit 0
