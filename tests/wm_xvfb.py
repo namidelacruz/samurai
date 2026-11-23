@@ -12,6 +12,9 @@ tmp = Path(tempfile.mkdtemp(prefix="samurai-wmtest-"))
 disp = ":%d" % (90 + os.getpid() % 9)
 env = dict(os.environ, PATH=str(ROOT / "tests/x11/net") + ":" + os.environ["PATH"], NET_CALLS=str(tmp / "calls"), DISPLAY=disp, XDG_RUNTIME_DIR=str(tmp), SAMURAI_CONFIG=str(tmp / "config"), HOME=str(tmp / "home"), USER="samtest")
 (tmp / "home").mkdir()
+# the floating checks first; tiling gets its own part below
+(tmp / "config").mkdir()
+(tmp / "config/wm.toml").write_text("[windows]\ntiling = false\n")
 # an app of our own, first by name, that leaves a mark when it runs
 appdir = tmp / "home/.local/share/applications"; appdir.mkdir(parents=True)
 (appdir / "aaa-samurai-test.desktop").write_text(f"[Desktop Entry]\nType=Application\nName=AAA Samurai test\nExec=touch {tmp}/app-ran\nIcon=utilities-terminal\n")
@@ -94,8 +97,34 @@ try:
           "shadow wifi connect Neighbour:Net --password-stdin (password length 5)" in calls and "wrong" not in calls)
     keys("tap", "Escape"); time.sleep(0.6)
     check("Escape closes the overview after that", state().get("overview") is False)
+    # tiling (on by default; switched on here, the way Settings does it)
+    (tmp / "config/wm.toml").write_text("[windows]\ntiling = true\n")
+    msg("reload"); time.sleep(1.2)
+    w = wins()
+    rects = {t: v["rect"] for t, v in w.items() if not v.get("tucked")}
+    def overlap(a, b):
+        return not (a[0] + a[2] <= b[0] or b[0] + b[2] <= a[0] or a[1] + a[3] <= b[1] or b[1] + b[3] <= a[1])
+    names = list(rects)
+    no_overlap = all(not overlap(rects[a], rects[b]) for i, a in enumerate(names) for b in names[i + 1:])
+    check("tiling on: the windows share the screen without overlapping", len(rects) >= 2 and no_overlap)
+    check("the first one takes a full-height half", any(r[3] > 780 and 600 < r[2] < 740 for r in rects.values()))
+    spawn(sys.executable, str(ROOT / "tests/x11/win.py"), "Fourth", "2a2e36", "500", "300"); time.sleep(1.0)
+    w = wins(); rects = {t: v["rect"] for t, v in w.items() if not v.get("tucked")}
+    check("a new window takes its share at once", "Fourth" in rects and rects["Fourth"][2] > 300 and
+          all(not overlap(rects["Fourth"], r) for t, r in rects.items() if t != "Fourth"))
+    before = wins()["Fourth"]["rect"]
+    msg("float"); time.sleep(0.6)
+    after = wins()["Fourth"]["rect"]
+    check("Super+V floats it: it comes forward, larger, in the middle", after != before and abs((after[0] + after[2] / 2) - 720) < 60)
+    msg("float"); time.sleep(0.6)
+    check("Super+V again tiles it", wins()["Fourth"]["rect"] == before)
+    left = min(rects.values(), key=lambda r: r[0])
+    first = [t for t, r in rects.items() if r == left][0]
+    msg("focus", "window", str(w[first]["id"])); time.sleep(0.3)
+    msg("move", "right"); time.sleep(0.7)
+    check("moving a tiled window swaps it with its neighbour", wins()[first]["rect"] != left)
     msg("close"); time.sleep(0.6)
-    check("close asks the focused window to leave", len(wins()) == 2)
+    check("close asks the focused window to leave", len(wins()) == 3)
 finally:
     for p in reversed(procs):
         p.terminate()

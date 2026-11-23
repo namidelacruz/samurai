@@ -11,8 +11,12 @@ the screen itself (it is its own compositor, like Hyprland or niri on Wayland). 
   one, or move with the arrow keys and press Enter; right-click an app to pin it first. There is
   no search bar in the way, but typing still filters at once: windows, apps, settings, a sum
   (`= 12*7`), or `>` and a command. Alt+Tab goes back and forth between windows as usual.
-- **No taskbar, no workspaces.** A tucked window (`Super+M`) waits on a thin shelf at the
-  bottom of the overview. Snap with `Super+arrows`, or drag a window to an edge.
+- **Tiling, like Hyprland.** New windows share the screen: the first takes it all, each next
+  one splits the space of the last (side by side when it is wide, stacked when it is tall).
+  `Super+V` floats a window (or tiles it again); dialogs float by themselves; dragging or
+  resizing a tiled window floats it. Settings › Windows › "Tile new windows" turns it off, and
+  then every window floats, snaps to halves and quarters, and gets **snap assist**: snap one
+  window to a side and the others are offered for the rest of the screen.
 - **Ink, made once.** The wallpaper is a marbled ink drawing made on your machine from random
   numbers that are thrown away after drawing: nobody, not even Samurai, can make it again. Its
   mark (like `3F2A · 91C0 · 7B44`) sits quietly in a corner of the empty desktop.

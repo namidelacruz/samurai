@@ -38,6 +38,7 @@ pub const ACTIONS: &[(&str, &str)] = &[
     ("reload", "Read the settings again"),
     ("quit", "Log out"),
     ("restart", "Restart the window manager (windows stay open)"),
+    ("float", "Float this window, or tile it again"),
     ("focus left", "Focus the window to the left"),
     ("focus right", "Focus the window to the right"),
     ("focus up", "Focus the window above"),
@@ -101,6 +102,7 @@ impl Wm {
                 self.set_fullscreen(w, !on);
             }
             ["restore"] => self.restore(need(focused)?),
+            ["float"] => self.toggle_float(need(focused)?),
             ["snap", which] => {
                 let w = need(focused)?;
                 self.snap(w, which);

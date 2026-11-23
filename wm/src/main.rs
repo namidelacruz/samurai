@@ -13,6 +13,7 @@ mod lock;
 mod overview;
 mod status;
 mod theme;
+mod tile;
 mod wm;
 mod x;
 

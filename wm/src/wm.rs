@@ -84,6 +84,8 @@ pub struct Client {
     pub pid: u32,
     pub ignore_unmaps: u32,
     pub hover: Option<u8>,
+    /// floated by hand (Super+V, or dragged): left out of the tiling
+    pub floating: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -126,6 +128,8 @@ pub struct Wm {
     pub comp: Comp,
     pub ov: overview::Overview,
     pub assist: crate::assist::Assist,
+    /// the order tiled windows are laid out in
+    pub tile_order: Vec<Window>,
     pub lock: lock::Lock,
     pub status: status::Status,
     pub ipc: Option<ipc::Server>,
@@ -194,6 +198,7 @@ impl Wm {
             comp,
             ov: overview::Overview::default(),
             assist: crate::assist::Assist::default(),
+            tile_order: vec![],
             lock: lock::Lock::default(),
             status: status::Status::start(),
             ipc: ipc::Server::bind(),
@@ -461,6 +466,7 @@ impl Wm {
             pid,
             ignore_unmaps: 0,
             hover: None,
+            floating: false,
         };
         self.place(&mut c, user_pos);
 
@@ -523,6 +529,7 @@ impl Wm {
         }
         self.update_client_list();
         self.draw_strip(win);
+        self.retile();
         if self.ov.open {
             self.ov.relayout = true;
         }
@@ -590,6 +597,8 @@ impl Wm {
             self.conn.change_save_set(SetMode::DELETE, c.win).ok();
         }
         self.conn.destroy_window(c.frame).ok();
+        self.tile_order.retain(|w| *w != c.win);
+        self.retile();
         self.mru.retain(|&w| w != c.win);
         if self.focused == Some(c.win) {
             self.focused = None;
@@ -764,6 +773,7 @@ impl Wm {
         self.conn.unmap_window(c.frame).ok();
         self.set_wm_state(c.win, 3);
         self.set_net_state(c.win);
+        self.retile();
         if self.focused == Some(c.win) {
             let next = self.mru.iter().copied().find(|&w| w != c.win && self.client(w).is_some_and(|o| !o.tucked));
             self.focus(next);
@@ -784,6 +794,7 @@ impl Wm {
         self.set_wm_state(c.win, 1);
         self.set_net_state(c.win);
         self.comp.opening(c.frame);
+        self.retile();
     }
 
     pub fn set_net_state(&self, win: Window) {
@@ -823,6 +834,11 @@ impl Wm {
     }
 
     pub fn snap(&mut self, win: Window, which: &str) {
+        // a tiled window snapped by hand floats from then on (fill keeps it tiled: it comes back)
+        if which != "fill" && self.client(win).is_some_and(|c| self.is_tiled(c)) {
+            if let Some(cm) = self.client_mut(win) { cm.floating = true; }
+            self.retile();
+        }
         let Some(c) = self.client(win).cloned() else { return };
         if c.fullscreen {
             self.set_fullscreen(win, false);
@@ -839,6 +855,9 @@ impl Wm {
         }
         self.move_to(win, to);
         self.set_net_state(win);
+        if which == "fill" {
+            self.retile();
+        }
     }
 
     pub fn restore(&mut self, win: Window) {
@@ -855,6 +874,7 @@ impl Wm {
             }
             self.move_to(win, r);
             self.set_net_state(win);
+            self.retile();
         } else {
             self.tuck(win);
         }
@@ -897,6 +917,7 @@ impl Wm {
         let after = self.client(win).map(|c| self.visible_rect(c)).unwrap_or(from);
         self.comp.morph(c.frame, from, after, self.motion());
         self.set_net_state(win);
+        self.retile();
     }
 
     pub fn center(&mut self, win: Window) {
@@ -1133,6 +1154,7 @@ impl Wm {
                 for w in lost {
                     self.center(w);
                 }
+                self.retile();
                 self.ov.relayout = true;
             }
             _ => {}
@@ -1370,6 +1392,7 @@ impl Wm {
         if !grabbed {
             return;
         }
+        self.float_on_drag(c.win);
         self.drag = Some(Drag::Move { win: c.win, dx: rx - c.rect.x, dy: ry - c.rect.y, start: (rx, ry), moved: false });
         self.shake.clear();
     }
@@ -1394,6 +1417,7 @@ impl Wm {
             cm.snapped = None;
             cm.restore = None;
         }
+        self.float_on_drag(c.win);
         self.drag = Some(Drag::Resize { win: c.win, edges, start: (rx, ry), orig: c.rect });
     }
 
@@ -1645,8 +1669,13 @@ impl Wm {
         let (cfg, err) = config::load();
         let wall_changed = cfg.look.wallpaper_night != self.cfg.look.wallpaper_night || cfg.look.wallpaper_paper != self.cfg.look.wallpaper_paper;
         let fonts_changed = cfg.look.ui_font != self.cfg.look.ui_font || cfg.look.mono_font != self.cfg.look.mono_font;
+        let tiling_was = self.cfg.windows.tiling;
         self.cfg = cfg;
         self.cfg_error = err.clone();
+        if self.cfg.windows.tiling && !tiling_was {
+            // tiling switched on: windows floated by hand stay floating, the rest tile now
+            self.retile();
+        }
         self.cfg_mtime = config::mtime();
         self.theme = Theme::new(self.cfg.look.ground == "night", &self.cfg.look.accent);
         if fonts_changed {
@@ -1703,13 +1732,3 @@ fn save_places(p: &HashMap<String, Rect>) {
     std::fs::write(dir.join("places.json"), serde_json::Value::Object(o).to_string()).ok();
 }
 
-impl Wm {
-    /// Tiling moves a window between columns; until tiling is on this does nothing (false).
-    pub fn tile_move(&mut self, _w: Window, _dir: &str) -> bool {
-        false
-    }
-    /// Whether windows are tiled now (then snap assist is not needed).
-    pub fn tiling_on(&self) -> bool {
-        false
-    }
-}
