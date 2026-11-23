@@ -10,7 +10,7 @@ if not shutil.which("Xvfb"):
     print("skip: Xvfb is not installed"); sys.exit(0)
 tmp = Path(tempfile.mkdtemp(prefix="samurai-wmtest-"))
 disp = ":%d" % (90 + os.getpid() % 9)
-env = dict(os.environ, PATH=str(ROOT / "tests/x11/net") + ":" + os.environ["PATH"], NET_CALLS=str(tmp / "calls"), DISPLAY=disp, XDG_RUNTIME_DIR=str(tmp), SAMURAI_CONFIG=str(tmp / "config"), HOME=str(tmp / "home"), USER="samtest")
+env = dict(os.environ, SAMURAI_TEST_MONITORS=str(tmp / "monitors"), PATH=str(ROOT / "tests/x11/net") + ":" + os.environ["PATH"], NET_CALLS=str(tmp / "calls"), DISPLAY=disp, XDG_RUNTIME_DIR=str(tmp), SAMURAI_CONFIG=str(tmp / "config"), HOME=str(tmp / "home"), USER="samtest")
 (tmp / "home").mkdir()
 # the floating checks first; tiling gets its own part below
 (tmp / "config").mkdir()
@@ -153,6 +153,20 @@ try:
     check("the workspace keys are in no list", "orkspace" not in listed and "send" not in listed and "Super + 1" not in listed)
     # bring the sent window home for the checks that follow
     keys("tap", "Super_L", "3"); time.sleep(0.4); msg("send", "1"); time.sleep(0.3); keys("tap", "Super_L", "1"); time.sleep(0.5)
+    # two screens appear (as when one is plugged in), then one goes again
+    (tmp / "monitors").write_text("0 0 720 900\n720 0 720 900\n")
+    msg("screens", "changed"); time.sleep(0.9)
+    check("a second screen is picked up without a restart", len(state().get("monitors", [])) == 2)
+    w = wins(); foc = [t for t, v in w.items() if v["focused"]][0]
+    x0 = w[foc]["rect"][0]
+    msg("monitor", "next"); time.sleep(0.8)
+    x1 = wins()[foc]["rect"][0]
+    check("Super+Ctrl+Right sends the window to the other screen", (x0 < 720) != (x1 < 720))
+    msg("focus", "monitor", "next"); time.sleep(0.4)
+    check("the windows are tiled on each screen on their own", all(v["rect"][0] + v["rect"][2] <= 720 + 8 or v["rect"][0] >= 720 - 8 for v in wins().values() if not v.get("tucked")))
+    (tmp / "monitors").write_text("0 0 1440 900\n")
+    msg("screens", "changed"); time.sleep(0.9)
+    check("when a screen goes, its windows come onto the one left", all(0 <= v["rect"][0] < 1440 for v in wins().values()) and len(state()["monitors"]) == 1)
     # transparency: the window you are in, and the others
     (tmp / "config/wm.toml").write_text("[windows]\ntiling = true\nopacity_active = 0.95\nopacity_inactive = 0.6\nopaque_apps = [\"terminal\"]\n")
     msg("reload"); time.sleep(0.8)

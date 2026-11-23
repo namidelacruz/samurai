@@ -363,7 +363,7 @@ impl Wm {
         let m = self.ov.mon;
         let mut wins: Vec<(Window, Rect)> = vec![];
         // most recent first, so the window you were in is first
-        let mut list: Vec<&crate::wm::Client> = self.clients.iter().filter(|c| !c.tucked && c.ws == self.ws && m.overlap(&self.visible_rect(c)) > 0).collect();
+        let mut list: Vec<&crate::wm::Client> = self.clients.iter().filter(|c| !c.tucked && c.ws == self.ws).collect();
         list.sort_by_key(|c| self.mru.iter().position(|w| *w == c.win).unwrap_or(usize::MAX));
         for c in list {
             wins.push((c.frame, self.visible_rect(c)));

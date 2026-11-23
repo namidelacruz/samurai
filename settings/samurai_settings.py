@@ -458,23 +458,65 @@ class Core(QObject):
 
     @Slot(result="QVariant")
     def screens(self):
+        """Every connected screen: where it is, its modes with their refresh rates, rotation."""
         code, out = sh(["xrandr", "--query"])
         rows = []
         if code != 0:
             return rows
         cur = None
         for l in out.splitlines():
-            m = re.match(r"^(\S+) (connected|disconnected)( primary)?\s*(\d+x\d+\+\d+\+\d+)?", l)
+            m = re.match(r"^(\S+) (connected|disconnected)( primary)?\s*(?:(\d+)x(\d+)\+(\d+)\+(\d+))?\s*(normal|left|right|inverted)?", l)
             if m:
                 cur = None
                 if m.group(2) == "connected":
-                    cur = dict(name=m.group(1), primary=bool(m.group(3)), geometry=m.group(4) or "off", modes=[])
+                    on = m.group(4) is not None
+                    cur = dict(name=m.group(1), primary=bool(m.group(3)), on=on,
+                               x=int(m.group(6) or 0), y=int(m.group(7) or 0),
+                               w=int(m.group(4) or 0), h=int(m.group(5) or 0),
+                               rotate=m.group(8) or "normal", modes=[], mode="", rate="",
+                               geometry=(f"{m.group(4)}x{m.group(5)}+{m.group(6)}+{m.group(7)}" if on else "off"))
                     rows.append(cur)
                 continue
             if cur is not None and l.startswith("   "):
                 f = l.split()
-                cur["modes"].append(f[0] + (" (now)" if "*" in l else ""))
+                rates = []
+                for r in f[1:]:
+                    rate = r.rstrip("*+")
+                    if re.match(r"^\d+(\.\d+)?$", rate):
+                        rates.append(rate)
+                        if "*" in r:
+                            cur["mode"], cur["rate"] = f[0], rate
+                cur["modes"].append({"mode": f[0], "rates": rates})
+        for r in rows:
+            if not r["mode"] and r["modes"]:
+                r["mode"] = r["modes"][0]["mode"]
+                r["rate"] = (r["modes"][0]["rates"] or [""])[0]
+            # rotated screens are taller than wide on the desktop
+            if r["rotate"] in ("left", "right") and r["w"] > r["h"]:
+                r["w"], r["h"] = r["h"], r["w"]
         return rows
+
+    @Slot("QVariant", result=str)
+    def arrangeRows(self, screens):
+        """Turn the arrangement on the Displays page into displays.monitors rows (fixed positions)."""
+        rows = []
+        for sc in screens or []:
+            if not sc.get("on", True):
+                rows.append({"output": sc["name"], "mode": "off", "position": "", "rotate": "normal", "primary": "no"})
+                continue
+            mode = sc.get("mode", "") + (("@" + sc["rate"]) if sc.get("rate") else "")
+            rows.append({"output": sc["name"], "mode": mode, "position": f"{int(sc.get('x', 0))}x{int(sc.get('y', 0))}",
+                         "rotate": sc.get("rotate", "normal"), "primary": "yes" if sc.get("primary") else "no"})
+        return json.dumps(rows)
+
+    @Slot(str)
+    def setJson(self, key_and_json):
+        """set(), with the value given as JSON text (lists of rows from QML)."""
+        key, _, text = key_and_json.partition("=")
+        try:
+            self.set(key, json.loads(text))
+        except ValueError:
+            self.message.emit("That could not be saved.", True)
 
     @Slot(result="QVariant")
     def system(self):

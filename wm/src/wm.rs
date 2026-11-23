@@ -291,6 +291,16 @@ impl Wm {
             .and_then(|c| c.reply().ok())
             .map(|r| r.monitors.iter().map(|m| Rect::new(m.x as i32, m.y as i32, m.width as i32, m.height as i32)).collect())
             .unwrap_or_default();
+        // tests: a file of "x y w h" lines stands in for the monitors (a virtual X server has one)
+        if let Some(f) = std::env::var_os("SAMURAI_TEST_MONITORS") {
+            let fake: Vec<Rect> = std::fs::read_to_string(f).unwrap_or_default().lines().filter_map(|l| {
+                let v: Vec<i32> = l.split_whitespace().filter_map(|n| n.parse().ok()).collect();
+                (v.len() == 4).then(|| Rect::new(v[0], v[1], v[2], v[3]))
+            }).collect();
+            if !fake.is_empty() {
+                mons = fake;
+            }
+        }
         if mons.is_empty() {
             let s = &self.conn.setup().roots[self.screen];
             mons.push(Rect::new(0, 0, s.width_in_pixels as i32, s.height_in_pixels as i32));
@@ -299,6 +309,39 @@ impl Wm {
         let (w, h) = self.screen_size();
         x::set_u32s(&self.conn, self.root, self.atoms._NET_DESKTOP_GEOMETRY, AtomEnum::CARDINAL, &[w as u32, h as u32]);
         self.publish_workarea();
+    }
+
+    /// A screen was plugged in, unplugged or changed: read them again, bring windows that are
+    /// now off every screen onto one (keeping their place relative to the screen they were on),
+    /// and lay things out again. No restart needed.
+    pub fn screens_changed(&mut self) {
+        let before = self.monitors.clone();
+        self.load_monitors();
+        self.comp.resize(&self.conn, self.screen_size());
+        self.comp.load_wallpapers(&self.conn, &self.cfg, &self.monitors);
+        let lost: Vec<Window> = self.clients.iter().filter(|c| !self.monitors.iter().any(|m| m.overlap(&self.visible_rect(c)) > 0)).map(|c| c.win).collect();
+        let home = self.monitors[0];
+        for w in lost {
+            let Some(c) = self.client(w).cloned() else { continue };
+            let vis = self.visible_rect(&c);
+            let old = before.iter().copied().find(|m| m.overlap(&vis) > 0).unwrap_or(home);
+            let wa = self.workarea(&home);
+            let (nw, nh) = (vis.w.min(wa.w), vis.h.min(wa.h));
+            let fx = (vis.x - old.x) as f32 / old.w.max(1) as f32;
+            let fy = (vis.y - old.y) as f32 / old.h.max(1) as f32;
+            let area = Rect::new((wa.x + (fx * wa.w as f32) as i32).clamp(wa.x, wa.x + wa.w - nw), (wa.y + (fy * wa.h as f32) as i32).clamp(wa.y, wa.y + wa.h - nh), nw, nh);
+            let to = self.client_rect_for(&c, area);
+            if let Some(cm) = self.client_mut(w) {
+                cm.snapped = None;
+                cm.restore = None;
+            }
+            self.move_to(w, to);
+        }
+        self.retile();
+        self.ov.relayout = true;
+        if self.taskbar.open {
+            self.draw_taskbar();
+        }
     }
 
     pub fn screen_size(&self) -> (i32, i32) {
@@ -1161,18 +1204,7 @@ impl Wm {
                     self.grab_keys();
                 }
             }
-            Event::RandrScreenChangeNotify(_) => {
-                self.load_monitors();
-                self.comp.resize(&self.conn, self.screen_size());
-                self.comp.load_wallpapers(&self.conn, &self.cfg, &self.monitors);
-                // bring back anything that ended up off every screen
-                let lost: Vec<Window> = self.clients.iter().filter(|c| !self.monitors.iter().any(|m| m.overlap(&c.rect) > 0)).map(|c| c.win).collect();
-                for w in lost {
-                    self.center(w);
-                }
-                self.retile();
-                self.ov.relayout = true;
-            }
+            Event::RandrScreenChangeNotify(_) => self.screens_changed(),
             _ => {}
         }
     }
@@ -1786,5 +1818,68 @@ impl Wm {
         let solid = self.cfg.windows.opaque_apps.iter().any(|a| a.eq_ignore_ascii_case(&c.class) || a.eq_ignore_ascii_case(&c.instance));
         let base = if solid { 1.0 } else if self.focused == Some(c.win) { self.cfg.windows.opacity_active } else { self.cfg.windows.opacity_inactive };
         (base * c.opacity_hint.unwrap_or(1.0)).clamp(0.2, 1.0)
+    }
+}
+
+impl Wm {
+    /// The screens left to right (then top to bottom), and which one holds `r`.
+    fn monitor_index(&self, r: &Rect) -> usize {
+        let m = self.monitor_of(r);
+        self.monitors_sorted().iter().position(|x| *x == m).unwrap_or(0)
+    }
+
+    pub fn monitors_sorted(&self) -> Vec<Rect> {
+        let mut v = self.monitors.clone();
+        v.sort_by_key(|m| (m.x, m.y));
+        v
+    }
+
+    /// Move a window to the next (or previous) screen, keeping where it sat on its screen.
+    pub fn send_to_monitor(&mut self, w: Window, next: bool) {
+        let mons = self.monitors_sorted();
+        if mons.len() < 2 {
+            self.say("Only one screen is connected".into());
+            return;
+        }
+        let Some(c) = self.client(w).cloned() else { return };
+        let vis = self.visible_rect(&c);
+        let i = self.monitor_index(&vis);
+        let j = if next { (i + 1) % mons.len() } else { (i + mons.len() - 1) % mons.len() };
+        let (from, to) = (self.workarea(&mons[i]), self.workarea(&mons[j]));
+        // the same place, relative to the screen; never larger than the new screen
+        let fx = (vis.x - from.x) as f32 / from.w.max(1) as f32;
+        let fy = (vis.y - from.y) as f32 / from.h.max(1) as f32;
+        let nw = vis.w.min(to.w);
+        let nh = vis.h.min(to.h);
+        let area = Rect::new((to.x + (fx * to.w as f32) as i32).min(to.x + to.w - nw), (to.y + (fy * to.h as f32) as i32).min(to.y + to.h - nh), nw, nh);
+        if c.fullscreen {
+            self.set_fullscreen(w, false);
+        }
+        let snapped = c.snapped.clone();
+        let target = self.client_rect_for(&c, area);
+        if let Some(cm) = self.client_mut(w) {
+            cm.restore = None;
+        }
+        self.move_to(w, target);
+        if let Some(sn) = snapped {
+            self.snap(w, &sn); // a snapped window keeps its half / quarter on the new screen
+        }
+        self.retile();
+        self.focus(Some(w));
+    }
+
+    /// Go to the next (or previous) screen: its last-used window gets the focus, and the pointer
+    /// moves there.
+    pub fn focus_monitor(&mut self, next: bool) {
+        let mons = self.monitors_sorted();
+        if mons.len() < 2 {
+            return;
+        }
+        let cur = self.pointer_monitor();
+        let i = mons.iter().position(|m| *m == cur).unwrap_or(0);
+        let m = mons[if next { (i + 1) % mons.len() } else { (i + mons.len() - 1) % mons.len() }];
+        let w = self.mru.iter().copied().find(|w| self.client(*w).is_some_and(|c| !c.tucked && c.ws == self.ws && self.monitor_of(&self.visible_rect(c)) == m));
+        self.conn.warp_pointer(x11rb::NONE, self.root, 0, 0, 0, 0, m.cx() as i16, m.cy() as i16).ok();
+        self.focus(w);
     }
 }

@@ -244,6 +244,19 @@ and are never written to a log. `samurai greeter remove` (or `./install.sh --uni
 the file again; a file of your own with that name is never touched. Without NetworkManager the
 Wi-Fi button simply does not appear.
 
+## Several screens
+
+Plug a screen in or out at any time: Samurai picks the change up without a restart, and windows
+on a screen that went away come onto one that is left, in the same place relative to the screen.
+Tiling, snapping and filling work per screen; the overview opens on the screen you are on and
+shows the windows of every screen; the taskbar appears on the screen you are on.
+
+Settings › Displays shows the screens side by side: drag one to where it sits on your desk (it
+snaps to the others' edges), pick its resolution, refresh rate, rotation and whether it is the
+main screen, then Apply. Every change goes back by itself after 15 seconds unless you press
+Keep, so a screen that stays dark never leaves you stuck. The arrangement is saved and comes
+back at every login.
+
 ## Size of everything (scaling)
 
 At the first login Samurai picks a size from your main screen (about 110 dots per inch counts as
@@ -347,6 +360,8 @@ apps, and offers Wi-Fi. Skip it if you like; Settings › Keyboard opens it agai
 | Focus the window left / right / up / down | `Super+Alt+arrows` | `Super+arrows` |
 | Quarters (floating) | `Super+Shift+arrows` | (moves the window instead) |
 | Next / previous window | `Alt+Tab` / `Alt+Shift+Tab` | the same |
+| Send the window to the next / previous screen | `Super+Ctrl+Right` / `Super+Ctrl+Left` | the same |
+| Go to the next / previous screen | `Super+Ctrl+Down` / `Super+Ctrl+Up` | the same |
 | Lock / log out | `Super+L` / `Super+Shift+Escape` | `Super+L` / `Super+M` |
 | Night / paper | `Super+Shift+B` | the same |
 | Screenshot of an area / the screen / the window | `Super+Shift+S`, `Print`, `Alt+Print` | the same |

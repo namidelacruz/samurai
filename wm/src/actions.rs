@@ -40,6 +40,10 @@ pub const ACTIONS: &[(&str, &str)] = &[
     ("restart", "Restart the window manager (windows stay open)"),
     ("float", "Float this window, or tile it again"),
     ("taskbar", "Show the minimized windows"),
+    ("monitor next", "Send the window to the next screen"),
+    ("monitor prev", "Send the window to the previous screen"),
+    ("focus monitor next", "Go to the next screen"),
+    ("focus monitor prev", "Go to the previous screen"),
     ("focus left", "Focus the window to the left"),
     ("focus right", "Focus the window to the right"),
     ("focus up", "Focus the window above"),
@@ -105,6 +109,12 @@ impl Wm {
             ["restore"] => self.restore(need(focused)?),
             ["float"] => self.toggle_float(need(focused)?),
             ["taskbar"] | ["taskbar", "toggle"] => self.taskbar_toggle(),
+            ["screens", "changed"] => self.screens_changed(),
+            ["monitor", dir @ ("next" | "prev")] => {
+                let w = need(focused)?;
+                self.send_to_monitor(w, *dir == "next");
+            }
+            ["focus", "monitor", dir @ ("next" | "prev")] => self.focus_monitor(*dir == "next"),
             ["workspace", n] => self.workspace(n.parse().map_err(|_| "workspace 1-9")?),
             ["send", n] => {
                 let w = need(focused)?;
