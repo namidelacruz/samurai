@@ -12,6 +12,9 @@ cargo test --release -q 2>&1 | grep -E "test result|FAILED|panicked" ; result "$
 part "shell scripts parse"
 rc=0; for f in install.sh packaging/bin/*; do sh -n "$f" || { echo "   $f"; rc=1; }; done; result $rc
 
+part "starting X (login screen user with / as home)"
+sh tests/x_start.sh; result $?
+
 part "window manager in Xvfb"
 cargo build --release -q -p samurai-wm && python3 tests/wm_xvfb.py; result $?
 

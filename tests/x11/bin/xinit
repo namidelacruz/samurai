@@ -1,0 +1,8 @@
+#!/bin/sh
+# test stand-in for xinit (not installable in the test sandbox)
+# stand-in: start the server args after --, then the client with DISPLAY
+c=""; while [ "$1" != -- ]; do c="$c '$1'"; shift; done; shift
+srv=$1; d=$2; shift 2
+echo "xinit client:$c server:$srv display:$d rest:$*"
+"$srv" "$d" -auth "$2" -nolisten tcp & p=$!; sleep 1
+export DISPLAY=$d; eval "$c"; rc=$?; kill $p; exit $rc

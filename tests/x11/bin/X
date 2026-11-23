@@ -1,0 +1,7 @@
+#!/bin/sh
+# test stand-in: behaves like Xorg without root (fails when its log folder is not writable), then runs Xvfb
+d=$1; shift
+dir=${XDG_DATA_HOME:-$HOME/.local/share}/xorg
+if ! : > "$dir/Xorg.${d#:}.log" 2>/dev/null; then echo "(EE) Cannot open log file \"$dir/Xorg.${d#:}.log\"" >&2; exit 1; fi
+echo "log ok: $dir" >&2
+exec Xvfb "$d" "$@" 2>/dev/null

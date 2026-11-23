@@ -19,9 +19,28 @@ trap 'rm -f "$auth"' EXIT INT TERM HUP
 cookie=$(mcookie 2>/dev/null || od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
 xauth -q -f "$auth" add ":$d" . "$cookie" || exit 1
 export XAUTHORITY="$auth"
+# Without root, X writes its log to $XDG_DATA_HOME/xorg (or ~/.local/share/xorg) and refuses to
+# start if it cannot ("Cannot open log file"). The login screen's user often has / as its home,
+# so pick a folder that is really writable, and use it for the server only.
+logdir=${XDG_DATA_HOME:-${HOME:-/nonexistent}/.local/share}
+if ! { mkdir -p "$logdir/xorg" && [ -w "$logdir/xorg" ]; } 2>/dev/null; then
+    logdir=$dir/samurai-xdata
+    mkdir -p "$logdir/xorg" 2>/dev/null || { logdir=/tmp/samurai-xdata-$(id -u); mkdir -p "$logdir/xorg"; }
+fi
+XLOG=$logdir/xorg/Xorg.$d.log
 client=$1; shift
 case "$client" in /*) ;; *) client=$(command -v "$client") || { echo "samurai-x: $client not found" >&2; exit 3; };; esac
 server=$(command -v X || command -v Xorg) || { echo "samurai-x: no X server (X.Org or XLibre) is installed" >&2; exit 3; }
 set -- "$client" "$@" -- "$server" ":$d" -auth "$auth" -nolisten tcp -keeptty -background none
 [ -n "$vt" ] && set -- "$@" "vt$vt"
+start=$(date +%s)
+# only when the home folder could not take it does the log folder change (then for both server
+# and client: a program whose home is not writable has nothing of its own there anyway)
+[ "$logdir" = "${XDG_DATA_HOME:-${HOME:-/nonexistent}/.local/share}" ] || export XDG_DATA_HOME="$logdir"
 xinit "$@"
+rc=$?
+if [ $rc != 0 ] && [ $(( $(date +%s) - start )) -lt 5 ]; then
+    echo "samurai-x: the X server did not start (exit $rc). Its log: $XLOG" >&2
+    [ -f "$XLOG" ] && tail -n 15 "$XLOG" | grep -E '\(EE\)|Fatal' | sed 's/^/samurai-x:   /' >&2
+fi
+exit $rc
