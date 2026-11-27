@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Samurai · Hyprland
+Comment=The Samurai desktop with Hyprland drawing the windows (Wayland)
+Exec=/opt/samurai/bin/samurai-hyprland
+Type=Application
+DesktopNames=Samurai;Hyprland

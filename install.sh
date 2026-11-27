@@ -8,6 +8,7 @@
 #   ./install.sh --no-greeter   leave the login screen as it is
 #   ./install.sh --no-packages  install no packages (you manage them yourself)
 #   ./install.sh --no-apps      skip the default apps (browser, files, editor, viewers, mail)
+#   ./install.sh --no-hyprland  skip the second session, Samurai on Hyprland (Wayland)
 #   ./install.sh --update       same steps, quieter wording (used by `samurai update install`)
 #   ./install.sh --uninstall    put back what was there before (your Samurai settings stay)
 #   install.sh --for-user NAME  as root, for NAME (archinstall's custom commands, a chroot,
@@ -38,13 +39,13 @@ if [ ! -f "$HERE/Cargo.toml" ] || [ ! -d "$HERE/wm" ]; then
     exec sh "$SRC/install.sh" "$@"
 fi
 
-MODE=install; GREETER=1; PACKAGES=1; APPS=1; FOR=""
+MODE=install; GREETER=1; PACKAGES=1; APPS=1; HYPR=1; FOR=""
 prev=""
 for a in "$@"; do
     if [ "$prev" = --for-user ]; then FOR=$a; prev=""; continue; fi
     case "$a" in
     --for-user) prev=--for-user;; --for-user=*) FOR=${a#--for-user=};;
-    --greeter) GREETER=1;; --no-greeter) GREETER=0;; --no-packages) PACKAGES=0;; --no-apps) APPS=0;;
+    --greeter) GREETER=1;; --no-greeter) GREETER=0;; --no-packages) PACKAGES=0;; --no-apps) APPS=0;; --no-hyprland) HYPR=0;;
     --update) MODE=update;; --uninstall) MODE=uninstall;;
     -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0;;
     *) echo "install.sh: unknown option $a" >&2; exit 2;;
@@ -138,6 +139,8 @@ CORE="xorg-xinit xorg-xauth xorg-xrandr xorg-xinput xorg-xset xorg-xsetroot xorg
       gvfs udisks2 dbus"
 LOGIN="greetd"
 BUILD="git rust gcc pkgconf"
+# the second session on the login screen: Samurai on Hyprland (Wayland)
+HYPR_LIST="hyprland waybar fuzzel hyprlock hypridle swaybg grim slurp wl-clipboard jq xdg-desktop-portal-hyprland xorg-xwayland"
 APPS_LIST="firefox thunar thunar-volman tumbler mousepad imv zathura zathura-pdf-mupdf mpv thunderbird file-roller"
 
 # an X server, unless one is already there (X.Org or XLibre: both are kept as they are)
@@ -157,6 +160,7 @@ plan_packages() { # writes the list to install and the notes for any pacman does
     want="$BUILD $CORE $(xserver_pkgs) $(sound_pkgs)"
     [ $GREETER = 0 ] || want="$want $LOGIN"
     [ $APPS = 0 ] || want="$want $APPS_LIST"
+    [ $HYPR = 0 ] || want="$want $HYPR_LIST"
     : > "$LOGDIR/.pkgs"
     for p in $want; do
         pacman -Qq "$p" >/dev/null 2>&1 && continue
@@ -208,11 +212,12 @@ place() {
         rm -rf /opt/samurai.new && mkdir -p /opt && cp -r "$1" /opt/samurai.new && chown -R root:root /opt/samurai.new
         [ ! -d /opt/samurai ] || { rm -rf /opt/samurai.old; mv /opt/samurai /opt/samurai.old; }
         mv /opt/samurai.new /opt/samurai
-        mkdir -p /usr/local/bin /usr/share/xsessions /usr/share/applications
+        mkdir -p /usr/local/bin /usr/share/xsessions /usr/share/wayland-sessions /usr/share/applications
         for b in samurai samurai-wm samurai-settings samurai-xserver samurai-key-pam; do ln -sfn /opt/samurai/bin/$b /usr/local/bin/$b; done
         # a shadow command of your own is kept
         [ -e /usr/local/bin/shadow ] && [ ! -L /usr/local/bin/shadow ] || ln -sfn /opt/samurai/bin/shadow /usr/local/bin/shadow
         install -m 0644 /opt/samurai/share/samurai.desktop /usr/share/xsessions/samurai.desktop
+        install -m 0644 /opt/samurai/share/samurai-hyprland.desktop /usr/share/wayland-sessions/samurai-hyprland.desktop
         install -m 0644 /opt/samurai/share/samurai-settings.desktop /usr/share/applications/samurai-settings.desktop
         # the lock screen checks passwords with this; a file of your own is kept
         # a file of your own is kept, and so is one with key login on (its "# samurai-key" line)
@@ -292,7 +297,7 @@ remove() {
         [ ! -x /opt/samurai/bin/samurai-greeter-setup ] || /opt/samurai/bin/samurai-greeter-setup --remove || true
         [ ! -x /opt/samurai/bin/samurai-key-pam ] || /opt/samurai/bin/samurai-key-pam disable || true
         ! grep -q "installed by Samurai" /etc/pam.d/samurai-lock 2>/dev/null || rm -f /etc/pam.d/samurai-lock
-        rm -f /usr/share/xsessions/samurai.desktop /usr/share/applications/samurai-settings.desktop
+        rm -f /usr/share/xsessions/samurai.desktop /usr/share/wayland-sessions/samurai-hyprland.desktop /usr/share/applications/samurai-settings.desktop
         for b in samurai samurai-wm samurai-settings samurai-xserver samurai-key-pam shadow; do
             [ "$(readlink /usr/local/bin/$b 2>/dev/null)" != /opt/samurai/bin/$b ] || rm -f /usr/local/bin/$b
         done

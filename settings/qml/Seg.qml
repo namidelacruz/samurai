@@ -11,7 +11,7 @@ Rectangle {
     signal picked(var value)
     implicitWidth: row.implicitWidth + 6 * s
     implicitHeight: row.implicitHeight + 6 * s
-    radius: 10 * s
+    radius: height / 2
     color: c.chrome
     border.color: c.line
     Row {
@@ -30,8 +30,8 @@ Rectangle {
                 Accessible.role: Accessible.RadioButton
                 Accessible.checked: sel
                 Accessible.name: modelData.label
-                background: Rectangle { radius: 7 * s; color: parent.sel ? c.raised : (parent.hovered ? Qt.alpha(c.text, 0.06) : "transparent"); border.width: parent.visualFocus ? 2 : 0; border.color: c.accent }
-                contentItem: Text { text: parent.text; color: parent.sel ? c.text : c.dim; font.pixelSize: 13 * s; font.weight: parent.sel ? Font.DemiBold : Font.Normal; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                background: Rectangle { radius: height / 2; color: parent.sel ? c.accent : (parent.hovered ? Qt.alpha(c.text, 0.06) : "transparent"); border.width: parent.visualFocus ? 2 : 0; border.color: c.accent }
+                contentItem: Text { text: parent.text; color: parent.sel ? c.onAccent : c.text; font.pixelSize: 13 * s; font.weight: parent.sel ? Font.DemiBold : Font.Normal; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
             }
         }
     }

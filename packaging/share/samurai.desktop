@@ -1,5 +1,5 @@
 [Desktop Entry]
-Name=Samurai
+Name=Samurai · X11
 Comment=The Samurai desktop (X11, its own window manager)
 Exec=/opt/samurai/bin/samurai-session
 Type=Application

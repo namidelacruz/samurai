@@ -989,12 +989,25 @@ impl Wm {
 
     // ── the title strip ──────────────────────────────────────────────────────────────────
     /// Buttons on the strip, right to left: close, fill, tuck. Returns (x, width) in frame coords.
+    /// Each is a word in a pill (the Sakura look: words over icons).
     pub fn strip_buttons(&self, c: &Client) -> [(i32, i32); 3] {
         let fr = self.frame_rect(c);
         let b = self.border(c);
-        let bw = (34.0 * self.scale) as i32;
-        let right = fr.w - b - (4.0 * self.scale) as i32;
-        [(right - bw, bw), (right - 2 * bw, bw), (right - 3 * bw, bw)]
+        let sc = self.scale;
+        let right = fr.w - b - (6.0 * sc) as i32;
+        let mut out = [(0, 0); 3];
+        let mut x = right;
+        for (i, word) in Self::strip_words(c).iter().enumerate() {
+            let bw = (self.fonts.measure(draw::Face::Ui, 12.0 * sc, word) + 22.0 * sc).ceil() as i32;
+            x -= bw;
+            out[i] = (x, bw);
+            x -= (2.0 * sc) as i32;
+        }
+        out
+    }
+
+    fn strip_words(c: &Client) -> [&'static str; 3] {
+        ["Close", if c.filled { "Back" } else { "Fill" }, "Tuck"]
     }
 
     pub fn draw_strip(&mut self, win: Window) {
@@ -1021,16 +1034,17 @@ impl Wm {
         let face = if focused { draw::Face::UiBold } else { draw::Face::Ui };
         let title = self.fonts.fit(face, fs, if c.title.is_empty() { &c.class } else { &c.title }, max_w);
         self.fonts.draw(&mut px, face, fs, left, ty, if focused { fg } else { dim }, &title);
+        let words = Self::strip_words(&c);
         for (i, (bx, bw)) in buttons.iter().enumerate() {
-            let name = match i { 0 => "close", 1 => if c.filled { "unmax" } else { "max" }, _ => "tuck" };
             let hover = c.hover == Some(i as u8);
+            let ph = s as f32 - 10.0 * sc;
             if hover {
                 let hb = if i == 0 { Rgba(200, 70, 60, 230) } else { fg.with_alpha(28) };
-                draw::rrect(&mut px, *bx as f32 + 3.0 * sc, b as f32 + 4.0 * sc, *bw as f32 - 6.0 * sc, s as f32 - 8.0 * sc, 7.0 * sc, hb);
+                draw::rrect(&mut px, *bx as f32, b as f32 + 5.0 * sc, *bw as f32, ph, ph / 2.0, hb);
             }
-            let isz = 15.0 * sc;
             let col = if hover && i == 0 { Rgba(255, 255, 255, 255) } else if focused { fg } else { dim };
-            draw::icon(&mut px, name, *bx as f32 + (*bw as f32 - isz) / 2.0, b as f32 + (s as f32 - isz) / 2.0, isz, col, 1.6);
+            let wfs = 12.0 * sc;
+            self.fonts.draw_centered(&mut px, draw::Face::Ui, wfs, *bx as f32 + *bw as f32 / 2.0, b as f32 + (s as f32 - wfs * 1.25) / 2.0, col, words[i]);
         }
         self.comp.put_rgb(&self.conn, c.frame, &px, 0, 0);
         self.comp.dirty = true;

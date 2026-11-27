@@ -15,7 +15,7 @@ Rectangle {
     Text { id: head; text: parent.title; visible: parent.title !== ""; height: visible ? 26 * s : 0; color: c.dim; font.pixelSize: 13 * s; font.weight: Font.DemiBold; leftPadding: 4 * s }
     Rectangle {
         y: head.height; width: parent.width; height: col.implicitHeight
-        radius: 12 * s; color: c.raised; border.color: c.line
+        radius: 14 * s; color: c.raised; border.color: c.line
         Column { id: col; width: parent.width }
     }
 }

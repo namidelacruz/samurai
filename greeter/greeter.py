@@ -294,8 +294,20 @@ def screen_scale():
         return 1.0
 
 
+def _have(prog):
+    return any(os.access(os.path.join(d, prog), os.X_OK) for d in os.environ.get("PATH", "/usr/bin:/bin").split(":") + ["/usr/bin"])
+
+
+SAMURAI_ENV = ["XDG_SESSION_DESKTOP=samurai", "XDG_CURRENT_DESKTOP=Samurai"]
+
+
 def sessions():
-    out = [dict(name="Samurai", cmd=["/opt/samurai/bin/samurai-session"])]
+    """Samurai on X11 first (the default), Samurai on Hyprland when Hyprland is installed, then
+    any other X11 session. Each knows the environment greetd starts it with."""
+    out = [dict(name="Samurai · X11", cmd=["/opt/samurai/bin/samurai-session"], env=["XDG_SESSION_TYPE=x11"] + SAMURAI_ENV)]
+    if _have("Hyprland") or os.environ.get("SAMURAI_GREETER_FAKE"):
+        out.append(dict(name="Samurai · Hyprland", cmd=["/opt/samurai/bin/samurai-hyprland"],
+                        env=["XDG_SESSION_TYPE=wayland", "XDG_SESSION_DESKTOP=samurai-hyprland", "XDG_CURRENT_DESKTOP=Samurai:Hyprland"]))
     for d in ("/usr/share/xsessions",):
         p = Path(d)
         if not p.is_dir():
@@ -309,8 +321,28 @@ def sessions():
                     k, v = l.split("=", 1)
                     kv.setdefault(k.strip(), v.strip())
             if kv.get("Exec") and kv.get("Hidden") != "true":
-                out.append(dict(name=kv.get("Name", f.stem), cmd=["/opt/samurai/bin/samurai-session", "--run", kv["Exec"]]))
+                out.append(dict(name=kv.get("Name", f.stem), cmd=["/opt/samurai/bin/samurai-session", "--run", kv["Exec"]], env=["XDG_SESSION_TYPE=x11"]))
     return out
+
+
+LAST = Path(os.environ.get("SAMURAI_GREETER_STATE_DIR", "/var/cache/samurai-greeter")) / "last-session"
+
+
+def remember_session(name):
+    """The session picked last is picked again next time (kept by the login screen's own user)."""
+    try:
+        LAST.parent.mkdir(parents=True, exist_ok=True)
+        LAST.write_text(name + "\n")
+    except OSError:
+        pass
+
+
+def last_session(names):
+    try:
+        n = LAST.read_text().strip()
+        return names.index(n) if n in names else 0
+    except (OSError, ValueError):
+        return 0
 
 
 class Core(QObject):
@@ -344,8 +376,14 @@ class Core(QObject):
 
     @Property(float, constant=True)
     def scale(self):
+        # what the screen should look like, less what Qt already does (so never twice)
         v = self.conf.get("scale")
-        return float(v) if v else screen_scale()
+        want = float(v) if v else screen_scale()
+        try:
+            dpr = QGuiApplication.primaryScreen().devicePixelRatio() or 1.0
+        except Exception:
+            dpr = 1.0
+        return max(0.5, want / dpr)
 
     @Property("QVariant", constant=True)
     def users(self):
@@ -354,6 +392,10 @@ class Core(QObject):
     @Property("QVariant", constant=True)
     def sessions(self):
         return [s["name"] for s in self._sessions]
+
+    @Property(int, constant=True)
+    def lastSession(self):
+        return last_session([s["name"] for s in self._sessions])
 
     @Property(str, constant=True)
     def wall(self):
@@ -425,8 +467,9 @@ class Core(QObject):
                         self.said.emit(text, kind == "error")
                     r = g.ask({"type": "post_auth_message_response"})
             if r.get("type") == "success":
-                cmd = self._sessions[self._session]["cmd"] if 0 <= self._session < len(self._sessions) else self._sessions[0]["cmd"]
-                env = ["XDG_SESSION_TYPE=x11"] + (["XDG_SESSION_DESKTOP=samurai", "XDG_CURRENT_DESKTOP=Samurai"] if self._session <= 0 else [])
+                pick = self._sessions[self._session] if 0 <= self._session < len(self._sessions) else self._sessions[0]
+                cmd, env = pick["cmd"], pick.get("env") or ["XDG_SESSION_TYPE=x11"]
+                remember_session(pick["name"])
                 r = g.ask({"type": "start_session", "cmd": cmd, "env": env})
                 if r.get("type") == "success":
                     self.said.emit("Starting…", False)
@@ -475,7 +518,8 @@ class Core(QObject):
     def date(self):
         import time
         t = time.localtime()
-        return time.strftime("%A, ") + str(t.tm_mday) + time.strftime(" %B")
+        jp = "月火水木金土日"[t.tm_wday]
+        return time.strftime("%Y.%m.%d") + f" · {jp}曜日 " + time.strftime("%A")
 
 
 def main():
@@ -502,6 +546,16 @@ def main():
         print("samurai-greeter: check ok" + (" (safe mode)" if SAFE else ""))
         del eng
         sys.exit(0)
+    # There is no window manager under the login screen, so "full screen" is only a wish: put
+    # the window over every screen ourselves, or it opens at its default size in a corner.
+    win = eng.rootObjects()[0]
+    try:
+        geo = app.primaryScreen().virtualGeometry()
+        win.setGeometry(geo)
+        print(f"samurai-greeter: screen {geo.width()}x{geo.height()}, size {core.scale:.2f}"
+              f" × {app.primaryScreen().devicePixelRatio():.2f}", file=sys.stderr, flush=True)
+    except Exception as e:  # never stop the login screen over this
+        print(f"samurai-greeter: could not size the window ({e})", file=sys.stderr)
     shot = os.environ.get("SAMURAI_GREETER_SHOT")
     if shot:  # tests: picture the screen, then leave
         win = eng.rootObjects()[0]

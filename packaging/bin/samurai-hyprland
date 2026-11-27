@@ -1,0 +1,44 @@
+#!/bin/sh
+# Starts Samurai on Hyprland: the same look, size, shortcuts and Settings, with Hyprland drawing
+# the windows. Picked on the login screen ("Samurai · Hyprland"); the X11 session is untouched.
+#
+# If Hyprland is not installed, or stops within a few seconds (a graphics problem), it starts the
+# X11 session instead, so a login always ends at a desktop and never at a text console.
+# Log: ~/.local/state/samurai/hyprland.log (the previous one is kept as hyprland.log.old).
+BIN=${SAMURAI_PREFIX:-/opt/samurai}/bin
+export PATH="$BIN:$PATH"
+LOGDIR=${XDG_STATE_HOME:-$HOME/.local/state}/samurai
+mkdir -p "$LOGDIR"
+LOG=$LOGDIR/hyprland.log
+[ -f "$LOG" ] && mv -f "$LOG" "$LOG.old"
+say() { echo "$(date '+%H:%M:%S') $*" >> "$LOG"; }
+
+x11_instead() {
+    say "$1: starting the X11 session instead"
+    unset WAYLAND_DISPLAY
+    exec "$BIN/samurai-session"
+}
+
+command -v Hyprland >/dev/null 2>&1 || x11_instead "Hyprland is not installed (samurai hyprland check)"
+export XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=Samurai:Hyprland XDG_SESSION_DESKTOP=samurai-hyprland
+if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/bus" ]; then
+    export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/bus"
+fi
+# the settings, the size and the colours, written before Hyprland reads them
+"$BIN/samurai" hyprland write >> "$LOG" 2>&1 || say "samurai hyprland write reported a problem"
+CONF=${SAMURAI_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/samurai}/hypr/hyprland.conf
+[ -f "$CONF" ] || x11_instead "no Hyprland config was written"
+say "Hyprland $(Hyprland --version 2>/dev/null | head -n1)"
+start=$(date +%s)
+# newer Hyprland ships a small launcher that watches it; use it when it is there
+if command -v start-hyprland >/dev/null 2>&1; then
+    start-hyprland -- --config "$CONF" >> "$LOG" 2>&1
+else
+    Hyprland --config "$CONF" >> "$LOG" 2>&1
+fi
+rc=$?
+ran=$(( $(date +%s) - start ))
+say "Hyprland left (code $rc after ${ran}s)"
+# a quick stop is a start that failed: the X11 desktop is the safe place to land
+[ $ran -ge 8 ] || x11_instead "Hyprland stopped after ${ran}s"
+exit $rc

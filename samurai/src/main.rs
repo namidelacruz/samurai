@@ -2,6 +2,7 @@
 //! The window manager itself is samurai-wm; Wi-Fi campus setup and repair is `shadow wifi`.
 
 mod doctor;
+mod hypr;
 mod key;
 mod misc;
 mod seal;
@@ -25,6 +26,7 @@ const HELP: &str = "samurai — the settings behind the Samurai desktop
   samurai seal forge [--erase-current]
   samurai shot area|screen|window take a screenshot (saved and copied)
   samurai xserver                 which X server runs: X.Org or XLibre
+  samurai hyprland write|check    the Samurai-on-Hyprland session: its files / what is missing
   samurai status                  battery, network, sound, update (JSON)
   samurai update check|install
   samurai key list|enroll UUID|test|forget   a USB stick as your login key
@@ -61,6 +63,12 @@ fn main() {
         ["seal", "forge", "--erase-current"] => seal::forge(true).and_then(|v| x11::apply().map(|_| v.to_string())),
         ["shot", mode] => x11::shot(mode),
         ["xserver"] => Ok(x11::xserver().to_string()),
+        ["hyprland", "write"] => hypr::write().map(|v| v.join("\n")),
+        ["hyprland", "start"] => hypr::start().map(|v| v.join("\n")),
+        ["hyprland", "check"] => {
+            let m = hypr::missing();
+            if m.is_empty() { Ok("everything the Hyprland session needs is installed".into()) } else { Err(format!("missing: {}", m.join(", "))) }
+        }
         ["status"] => Ok(misc::status().to_string()),
         ["update", rest @ ..] => misc::update(rest),
         ["greeter", "apply"] => {

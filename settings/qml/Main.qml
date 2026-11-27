@@ -17,6 +17,9 @@ ApplicationWindow {
     readonly property var c: core.colors
     readonly property real s: core.scale
     readonly property var pages: core.schema.pages || []
+    // the Sakura look: every page also has its Japanese name
+    readonly property var jp: ({ look: "外観", displays: "ディスプレイ", network: "ネットワーク", sound: "音", keyboard: "キー",
+                                 mouse: "マウス", apps: "アプリ", power: "電源", notices: "通知", system: "システム" })
     property string pageId: core.startPage
     property string query: ""
     readonly property var page: { for (var i = 0; i < pages.length; i++) if (pages[i].id === pageId) return pages[i]; return pages[0] }
@@ -68,7 +71,7 @@ ApplicationWindow {
                 ToolTip.visible: hovered; ToolTip.text: "Back to the default"
                 Accessible.name: "Back to the default"
                 onClicked: core.reset(st.item.key)
-                background: Rectangle { radius: 8 * s; color: parent.hovered ? c.chrome : "transparent" }
+                background: Rectangle { radius: height / 2; color: parent.hovered ? c.chrome : "transparent" }
                 contentItem: Text { text: "↺"; color: c.dim; font.pixelSize: 16 * s; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
             }
             Loader {
@@ -214,8 +217,9 @@ ApplicationWindow {
                     id: search
                     Layout.fillWidth: true
                     Layout.bottomMargin: 10 * s
-                    placeholderText: "Search settings"
+                    placeholderText: "検索 Search settings"
                     leftPadding: 36 * s
+                    background: Rectangle { radius: height / 2; color: c.field; border.color: search.activeFocus ? c.accent : c.line; border.width: search.activeFocus ? 2 : 1 }
                     onTextChanged: win.query = text.trim().toLowerCase()
                     Icon { name: "search"; size: 16 * s; x: 12 * s; anchors.verticalCenter: parent.verticalCenter }
                     Accessible.name: "Search settings"
@@ -229,12 +233,10 @@ ApplicationWindow {
                         implicitHeight: 38 * s
                         onClicked: { win.pageId = modelData.id; search.text = "" }
                         Accessible.name: modelData.title
-                        background: Rectangle { radius: 9 * s; color: parent.sel ? c.soft : (parent.hovered ? Qt.alpha(c.text, 0.05) : "transparent"); border.width: parent.visualFocus ? 2 : 0; border.color: c.accent }
-                        contentItem: Row {
-                            spacing: 12 * s
-                            leftPadding: 12 * s
-                            Icon { name: modelData.icon; tint: parent.parent.sel ? c.accent : c.dim; size: 17 * s; anchors.verticalCenter: parent.verticalCenter }
-                            Text { text: modelData.title; color: parent.parent.sel ? c.text : c.dim; font.pixelSize: 13.5 * s; font.weight: parent.parent.sel ? Font.DemiBold : Font.Normal; anchors.verticalCenter: parent.verticalCenter }
+                        background: Rectangle { radius: height / 2; color: parent.sel ? c.soft : (parent.hovered ? Qt.alpha(c.text, 0.05) : "transparent"); border.width: parent.visualFocus ? 2 : 0; border.color: c.accent }
+                        contentItem: Item {
+                            Text { x: 16 * s; width: parent.width - 16 * s - jpName.width - 22 * s; elide: Text.ElideRight; text: modelData.title; color: parent.parent.sel ? c.accent : c.text; font.pixelSize: 13.5 * s; font.weight: parent.parent.sel ? Font.DemiBold : Font.Normal; anchors.verticalCenter: parent.verticalCenter }
+                            Text { id: jpName; anchors.right: parent.right; anchors.rightMargin: 14 * s; text: win.jp[modelData.id] || ""; color: parent.parent.sel ? c.accent : c.dim; font.pixelSize: 11 * s; anchors.verticalCenter: parent.verticalCenter }
                         }
                     }
                 }
@@ -256,7 +258,8 @@ ApplicationWindow {
                 ColumnLayout {
                     Layout.leftMargin: 40 * s; Layout.rightMargin: 40 * s
                     spacing: 6 * s
-                    Text { text: win.query ? "Search" : win.page.title; color: c.text; font.pixelSize: 26 * s; font.weight: Font.DemiBold }
+                    Text { text: win.query ? "検索" : (win.jp[win.page.id] || win.page.title); color: c.text; font.pixelSize: 28 * s; font.weight: Font.DemiBold }
+                    Text { text: win.query ? "Search" : win.page.title; color: c.dim; font.pixelSize: 14 * s; visible: win.query !== "" || !!win.jp[win.page.id] }
                     Text { text: win.query ? "Every setting whose name has “" + search.text + "”." : win.page.lead; color: c.dim; font.pixelSize: 14 * s; wrapMode: Text.Wrap; Layout.maximumWidth: 640 * s }
                 }
                 // the hand-made part of this page

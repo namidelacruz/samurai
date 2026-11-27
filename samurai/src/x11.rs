@@ -170,7 +170,7 @@ pub fn wm_toml() -> String {
     s += &format!("follow_sun = {}\n", g("look.ground") == "sun");
     s += &format!("sun_from = {}\nsun_to = {}\n", q(&g("look.sun_from")), q(&g("look.sun_to")));
     s += &format!("accent = {}\n", q(&g("look.accent")));
-    s += &format!("corners = {}\n", if g("look.corners") == "square" { "0.0" } else { "12.0" });
+    s += &format!("corners = {}\n", if g("look.corners") == "square" { "0.0" } else { "14.0" });
     s += &format!("motion = {}\n", q(&g("look.motion")));
     s += &format!("scale = {:.2}\n", store::get_f64("look.scale"));
     s += &format!("mark = {}\n", q(&seal::mark()));
@@ -384,6 +384,9 @@ fn toolkits(p: &Pal, log: &mut Vec<String>) {
     let gtk_theme = if store::get_bool("apps.gtk") { if dark { "adw-gtk3-dark" } else { "adw-gtk3" } } else { "Adwaita" };
     let icons = if dark { "Papirus-Dark" } else { "Papirus" };
     let dpi = (96.0 * s).round() as i64;
+    // GTK on X11 scales its widgets only in whole steps; the text takes the rest, so at 200 %
+    // widgets and text grow together (before this, text grew and widgets stayed small)
+    let (gtk_ws, gtk_unscaled) = gtk_scale(s);
     for v in ["gtk-3.0", "gtk-4.0"] {
         let mut c = format!("# {MARK} (Settings › Apps).\n[Settings]\n");
         if v == "gtk-3.0" {
@@ -394,7 +397,7 @@ fn toolkits(p: &Pal, log: &mut Vec<String>) {
     }
     // xsettingsd tells running GTK apps at once, without a restart
     let mut x = format!("# {MARK}\nNet/ThemeName \"{gtk_theme}\"\nNet/IconThemeName \"{icons}\"\nGtk/FontName \"{ui} 10\"\nGtk/MonospaceFontName \"{mono} 10\"\n");
-    x += &format!("Gtk/CursorThemeName \"Adwaita\"\nGtk/CursorThemeSize {cursor_px}\nXft/DPI {}\nXft/Antialias 1\nXft/Hinting 1\nXft/HintStyle \"hintslight\"\nXft/RGBA \"rgb\"\nNet/EnableEventSounds 0\nGtk/DecorationLayout \":\"\n", dpi * 1024);
+    x += &format!("Gtk/CursorThemeName \"Adwaita\"\nGtk/CursorThemeSize {cursor_px}\nXft/DPI {}\nXft/Antialias 1\nXft/Hinting 1\nXft/HintStyle \"hintslight\"\nXft/RGBA \"rgb\"\nNet/EnableEventSounds 0\nGtk/DecorationLayout \":\"\nGdk/WindowScalingFactor {gtk_ws}\nGdk/UnscaledDPI {}\n", dpi * 1024, gtk_unscaled * 1024);
     if put(&xdg_config().join("xsettingsd/xsettingsd.conf"), &x, log) && running("xsettingsd") {
         run(&["pkill", "-HUP", "-x", "xsettingsd"]);
     }
@@ -413,7 +416,7 @@ fn toolkits(p: &Pal, log: &mut Vec<String>) {
     }
     // Xft (older apps) and the cursor
     // what every app started in the session inherits (samurai-session reads this file)
-    let env = format!("# {MARK}: the size of everything, for apps that read it from the environment.\nexport XCURSOR_THEME=Adwaita XCURSOR_SIZE={cursor_px}\n# Qt: follow fractional sizes (125 %, 150 %) exactly instead of rounding them\nexport QT_ENABLE_HIGHDPI_SCALING=1 QT_SCALE_FACTOR_ROUNDING_POLICY=PassThrough\n");
+    let env = format!("# {MARK}: the size of everything, for apps that read it from the environment.\nexport XCURSOR_THEME=Adwaita XCURSOR_SIZE={cursor_px}\n# Qt: follow fractional sizes (125 %, 150 %) exactly instead of rounding them\nexport QT_ENABLE_HIGHDPI_SCALING=1 QT_SCALE_FACTOR_ROUNDING_POLICY=PassThrough\n# GTK: whole steps for widgets, the text makes up the rest (the same total size as Qt)\nexport GDK_SCALE={gtk_ws} GDK_DPI_SCALE={:.4}\n# Java apps\nexport _JAVA_OPTIONS=\"-Dsun.java2d.uiScale={s:.2}\"\n", 1.0 / gtk_ws as f64);
     put(&store::config_dir().join("session.env"), &env, log);
     let xr = format!("! {MARK}\nXft.dpi: {dpi}\nXft.antialias: 1\nXft.hinting: 1\nXft.hintstyle: hintslight\nXft.rgba: rgb\nXcursor.theme: Adwaita\nXcursor.size: {cursor_px}\n");
     let xr_path = store::config_dir().join("Xresources");
@@ -648,8 +651,15 @@ pub fn apply() -> Result<Vec<String>, String> {
     input(&mut log);
     night_light(&mut log);
     mime_defaults(&mut log);
+    // the Hyprland session's files, once it has been used (or while it runs)
+    if crate::hypr::dir().join("hyprland.conf").exists() || crate::hypr::running() {
+        match crate::hypr::write() {
+            Ok(_) => log.push("wrote the Hyprland session's files".into()),
+            Err(e) => log.push(format!("Hyprland files: {e}")),
+        }
+    }
     // the running window manager reads its file again
-    if std::env::var_os("DISPLAY").is_some() && have("samurai-wm") {
+    if std::env::var_os("DISPLAY").is_some() && !crate::hypr::running() && have("samurai-wm") {
         run(&["samurai-wm", "msg", "reload"]);
     }
     Ok(log)
@@ -667,21 +677,45 @@ pub fn scale_for(px: i64, mm: i64) -> f64 {
     ((dpi / 110.0 * 4.0).round() / 4.0).clamp(1.0, 2.5)
 }
 
+/// GTK's share of a size `s` on X11: (whole-step widget scale, the font DPI before it).
+/// 200 % → (2, 96): widgets and text both double. 150 % → (1, 144): text only (GTK cannot
+/// draw widgets at 1.5 on X11; on the Hyprland session it can).
+pub fn gtk_scale(s: f64) -> (i64, i64) {
+    let ws = ((s + 0.25).floor() as i64).max(1);
+    (ws, (96.0 * s / ws as f64).round() as i64)
+}
+
+/// Read the main screen from xrandr: (output name, pixels across, millimetres across).
+pub fn main_screen() -> Option<(String, i64, i64)> {
+    let q = output(&["xrandr", "--query"])?;
+    // "eDP-1 connected primary 2560x1600+0+0 (normal left inverted right x axis y axis) 302mm x 189mm"
+    let line = q.lines().find(|l| l.contains(" connected primary")).or_else(|| q.lines().find(|l| l.contains(" connected")))?;
+    let name = line.split_whitespace().next()?.to_string();
+    let px = line.split_whitespace().find(|w| w.contains('x') && w.contains('+')).and_then(|g| g.split('x').next()?.parse::<i64>().ok()).unwrap_or(0);
+    let mm = line.split_whitespace().collect::<Vec<_>>().windows(3).rev().find(|w| w[1] == "x" && w[0].ends_with("mm")).and_then(|w| w[0].trim_end_matches("mm").parse::<i64>().ok()).unwrap_or(0);
+    Some((name, px, mm))
+}
+
 /// The first time Samurai starts on this machine, pick the size from the main screen, unless
 /// you have chosen one already. Afterwards it is never changed behind your back.
 fn auto_scale(log: &mut Vec<String>) {
-    let mark = store::state_dir().join("scale-picked");
-    if mark.exists() || store::user().contains_key("look.scale") || std::env::var_os("DISPLAY").is_none() {
+    if std::env::var_os("DISPLAY").is_none() {
         return;
     }
-    let Some(q) = output(&["xrandr", "--query"]) else { return };
-    // "eDP-1 connected primary 2560x1600+0+0 (normal left inverted right x axis y axis) 302mm x 189mm"
-    let line = q.lines().find(|l| l.contains(" connected primary")).or_else(|| q.lines().find(|l| l.contains(" connected")));
-    let Some(line) = line else { return };
-    let px = line.split_whitespace().find(|w| w.contains('x') && w.contains('+')).and_then(|g| g.split('x').next()?.parse::<i64>().ok()).unwrap_or(0);
-    let mm = line.split_whitespace().collect::<Vec<_>>().windows(3).rev().find(|w| w[1] == "x" && w[0].ends_with("mm")).and_then(|w| w[0].trim_end_matches("mm").parse::<i64>().ok()).unwrap_or(0);
+    let mark = store::state_dir().join("scale-picked");
+    // a size saved as 100 % on a sharp screen (by an early setup or installer, before sizes were
+    // picked) is the cause of a desktop that is too small next to apps that are not: put right
+    // once, then left alone
+    let fix = store::state_dir().join("scale-checked-2");
+    let saved = store::user().contains_key("look.scale");
+    let stale = saved && !fix.exists() && (store::get_f64("look.scale") - 1.0).abs() < 0.01;
+    if (mark.exists() || saved) && !stale {
+        return;
+    }
+    let Some((_, px, mm)) = main_screen() else { return };
     let v = scale_for(px, mm);
     let _ = store::atomic_write(&mark, &format!("{v}\n"));
+    let _ = store::atomic_write(&fix, "");
     if (v - 1.0).abs() > 0.01 && store::set("look.scale", Value::from(v)).is_ok() {
         log.push(format!("size picked from the screen ({px} px over {mm} mm): {:.0} %", v * 100.0));
         let _ = apply();
@@ -805,6 +839,13 @@ mod t {
         assert_eq!(scale_for(2560, 302), 2.0, "13-inch 1600p");
         assert_eq!(scale_for(1920, 0), 1.0, "no size reported");
         assert_eq!(scale_for(7680, 300), 2.5, "never past 250 %");
+    }
+    #[test]
+    fn gtk_takes_whole_steps() {
+        assert_eq!(gtk_scale(1.0), (1, 96));
+        assert_eq!(gtk_scale(1.5), (1, 144));
+        assert_eq!(gtk_scale(2.0), (2, 96), "widgets and text both double");
+        assert_eq!(gtk_scale(2.5), (2, 120));
     }
     #[test]
     fn fetch_colours() {

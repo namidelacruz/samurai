@@ -264,7 +264,7 @@ fn draw_corners(wm: &mut Wm) {
         let date = overview::short_date();
         let time = format!("{h:02}:{mi:02}");
         let fs = 12.5 * s;
-        let dw = wm.fonts.measure(draw::Face::Ui, fs, &date);
+        let dw = wm.fonts.measure(draw::Face::Mono, fs * 0.94, &date);
         let tw = wm.fonts.measure(draw::Face::UiBold, fs, &time);
         let icons = 3.0 * 15.0 * s + 2.0 * 8.0 * s;
         // the only sign of minimized windows until the taskbar is called up: a small count
@@ -278,7 +278,7 @@ fn draw_corners(wm: &mut Wm) {
             draw::rrect_line(&mut px, 1.0, 1.0, w, hgt, hgt / 2.0, th.line, 1.0);
             let ty = 1.0 + (hgt - fs * 1.25) / 2.0;
             let mut x = 1.0 + 14.0 * s;
-            wm.fonts.draw(&mut px, draw::Face::Ui, fs, x, ty, th.dim, &date);
+            wm.fonts.draw(&mut px, draw::Face::Mono, fs * 0.94, x, ty, th.dim, &date);
             x += dw + 12.0 * s;
             wm.fonts.draw(&mut px, draw::Face::UiBold, fs, x, ty, th.text, &time);
             x += tw + 12.0 * s;

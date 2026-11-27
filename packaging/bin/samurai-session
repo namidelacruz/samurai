@@ -49,7 +49,7 @@ echo "$(date): Samurai on $DISPLAY ($("$BIN/samurai" xserver 2>/dev/null | head 
 # the size of everything (cursor, Qt rounding), written by samurai apply
 ENVF=${SAMURAI_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/samurai}/session.env
 [ -f "$ENVF" ] && . "$ENVF" && share_env && command -v dbus-update-activation-environment >/dev/null 2>&1 &&
-    dbus-update-activation-environment --systemd XCURSOR_THEME XCURSOR_SIZE QT_ENABLE_HIGHDPI_SCALING QT_SCALE_FACTOR_ROUNDING_POLICY 2>/dev/null
+    dbus-update-activation-environment --systemd XCURSOR_THEME XCURSOR_SIZE QT_ENABLE_HIGHDPI_SCALING QT_SCALE_FACTOR_ROUNDING_POLICY GDK_SCALE GDK_DPI_SCALE _JAVA_OPTIONS 2>/dev/null
 # the window manager: started again if it crashes, so a crash never logs you out. After three
 # crashes within a minute it starts in safe mode (no animations, no transparency, no effects);
 # if that crashes too, a terminal opens with the log instead of a black screen.

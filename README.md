@@ -320,10 +320,33 @@ screens, the cursor, the terminal, Qt apps (fractional sizes followed exactly), 
 Firefox (through the screen's DPI). The login screen sizes itself from the screen the same way;
 if you picked your own size, `samurai greeter apply` copies it there.
 
+Fixed in this version: Settings and the login screen were enlarged twice (once by Qt from the
+screen's DPI, once by themselves), and GTK apps grew their text but not their buttons at 200 %.
+Both now come out the same size as every other app. A size saved as 100 % on a sharp screen by an
+early setup is put right once at the next login (afterwards your choice is kept).
+
 Limits of X11, honestly: there is one size for all monitors (a 4K screen next to a 1080p one
-gets the same size on both), and GTK 3 apps grow their text at fractional sizes such as 125 %
-or 150 % but not their icons; at 200 % and up everything grows. New apps pick a change up; apps
-already open keep their old size until restarted.
+gets the same size on both), and GTK apps grow their text at in-between sizes such as 125 % or
+150 % but not their buttons (X11 GTK only scales in whole steps); at 100 % and 200 % everything
+matches. The Hyprland session (below) has no such limit. New apps pick a change up; apps already
+open keep their old size until restarted.
+
+## Two sessions: X11 or Hyprland
+
+The login screen offers **Samurai · X11** (Samurai's own window manager, the default) and, when
+Hyprland is installed, **Samurai · Hyprland**: the same colours, size, shortcuts, Settings and
+login screen, with Hyprland drawing the windows on Wayland. The one you pick is picked again
+next time. The installer installs Hyprland and its parts unless you pass `--no-hyprland`.
+
+On Hyprland, Super opens the app list, the bar at the top is the same pill as on X11, Super+L
+locks with the same face as the login screen, and every size (125 %, 150 %…) is drawn evenly by
+every Wayland app. Workspaces work on Super+1…9 (Super+Shift+number moves a window there).
+
+* `samurai hyprland check` lists anything missing; `samurai hyprland write` rewrites its files
+  (also done by every change in Settings). They live in `~/.config/samurai/hypr/`; your own
+  Hyprland lines go in `~/.config/hypr/samurai-local.conf`, which Samurai never changes.
+* If Hyprland is missing or stops within a few seconds of starting, the X11 session starts
+  instead, so a login never ends at a text console. Its log: `~/.local/state/samurai/hyprland.log`.
 
 ## If the login screen is too small or too big
 

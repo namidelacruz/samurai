@@ -91,7 +91,7 @@
        "max": 2.5,
        "step": 0.25,
        "unit": "×",
-       "help": "One size for every app, old and new. 1.5 suits a 14\" 2.5K screen."
+       "help": "One size for the desktop, the login screen and every app. Picked from your screen at the first login. On X11, GTK apps are evenest at 1.0 or 2.0 (in between, only their text grows); the Hyprland session draws every size evenly."
       },
       {
        "key": "look.motion",

@@ -41,6 +41,8 @@ command -v xauth >/dev/null 2>&1 || missing "xauth (xorg-xauth)"
 { command -v X || command -v Xorg; } >/dev/null 2>&1 || missing "an X server (X.Org or XLibre)"
 python3 -c 'import PySide6.QtQuick' >/dev/null 2>&1 || missing "PySide6 (pyside6)"
 GUSER=$(greeter_user) || { echo "no greeter user (greeter / greetd / _greetd): the login screen was left alone" >&2; exit 3; }
+# where the login screen remembers the session picked last (X11 or Hyprland)
+install -d -o "$GUSER" -m 0755 /var/cache/samurai-greeter 2>/dev/null || true
 [ -x /opt/samurai/bin/samurai-greeter-run ] && [ -f /opt/samurai/greeter/greeter.py ] || { echo "Samurai is not installed in /opt/samurai" >&2; exit 3; }
 
 # self-check: the login screen must load (normal and safe mode), as the user greetd runs it as,

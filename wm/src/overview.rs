@@ -919,7 +919,7 @@ impl Wm {
             let order = self.app_order();
             let pins = self.pinned().len();
             let icons = self.cfg.look.apps_view != "list";
-            f.draw(&mut px, Face::UiBold, 11.0 * s, apps_r.x as f32 + 4.0 * s, apps_r.y as f32 - 24.0 * s, th.dim, &format!("APPS  ·  {}", order.len()));
+            f.draw(&mut px, Face::UiBold, 11.0 * s, apps_r.x as f32 + 4.0 * s, apps_r.y as f32 - 24.0 * s, th.dim, &format!("すべてのアプリ  All apps  ·  {}", order.len()));
             let (cw, chh) = if icons {
                 (104.0 * s, 98.0 * s)
             } else {
@@ -1256,9 +1256,9 @@ pub fn short_date() -> String {
         let t = libc::time(std::ptr::null_mut());
         let mut tm: libc::tm = std::mem::zeroed();
         libc::localtime_r(&t, &mut tm);
-        const DAYS: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-        const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-        format!("{} {} {}", DAYS[tm.tm_wday as usize % 7], tm.tm_mday, MONTHS[tm.tm_mon as usize % 12])
+        // the Sakura way: 2026.11.27 金 (year.month.day, then the day of the week in one character)
+        const DAYS: [&str; 7] = ["日", "月", "火", "水", "木", "金", "土"];
+        format!("{}.{:02}.{:02} {}", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, DAYS[tm.tm_wday as usize % 7])
     }
 }
 

@@ -146,6 +146,17 @@ def desktop_entries():
     return out
 
 
+def extra_scale(want):
+    """`want` (the size asked for, 1.0 = 100 %) divided by what Qt already applies."""
+    try:
+        from PySide6.QtGui import QGuiApplication
+        scr = QGuiApplication.primaryScreen()
+        dpr = scr.devicePixelRatio() if scr else 1.0
+    except Exception:
+        dpr = 1.0
+    return max(0.5, want / (dpr if dpr and dpr > 0 else 1.0))
+
+
 class Core(QObject):
     changed = Signal()
     themeChanged = Signal()
@@ -233,10 +244,14 @@ class Core(QObject):
 
     @Property(float, notify=changed)
     def scale(self):
+        """What Settings itself still has to multiply by. Qt already scales every app by the
+        screen's DPI (Xft.dpi, or Hyprland's own scale); only what it left out is added here, so
+        Settings is the same size as every other app instead of twice as big."""
         try:
-            return float(self._values.get("look.scale", 1.0))
+            want = float(self._values.get("look.scale", 1.0))
         except (TypeError, ValueError):
-            return 1.0
+            want = 1.0
+        return extra_scale(want)
 
     # ── changes ─────────────────────────────────────────────────────────────────────────────
     def _run(self, tag, cmd, inp=None):

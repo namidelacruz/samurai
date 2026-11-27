@@ -1,4 +1,5 @@
-// The Samurai login screen: the public ink, the time, and one card. Same face as the lock.
+// The Samurai login screen, in the Sakura look: the ink on the left with the time, the sign-in
+// on the right (like the Shadow Sakura website's sign-in page). The lock uses the same face.
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Window
@@ -9,7 +10,7 @@ Window {
     readonly property var c: core.colors
     readonly property real s: core.scale
     property int user: 0
-    property int session: 0
+    property int session: core.lastSession
     property string msg: ""
     property bool bad: false
     visible: true
@@ -26,152 +27,213 @@ Window {
         function onAsked(text, secret) { w.question = text; w.questionSecret = secret; w.msg = ""; w.bad = false; pw.text = ""; pw.forceActiveFocus() }
     }
 
-    Image { anchors.fill: parent; source: core.wall; fillMode: Image.PreserveAspectCrop; asynchronous: true; visible: source !== "" }
-    Rectangle { anchors.fill: parent; color: c.ground; opacity: 0.45 }
+    function signIn() {
+        w.msg = ""; w.bad = false
+        if (w.question !== "") { var a = pw.text; pw.text = ""; core.answer(a) }
+        else { var p = pw.text; pw.text = ""; core.login(core.users.length ? core.users[w.user] : name.text, p, w.session) }
+    }
 
-    // the card, on the main screen
+    // the ink, over every screen
+    Image { anchors.fill: parent; source: core.wall; fillMode: Image.PreserveAspectCrop; asynchronous: true; visible: source !== "" }
+
+    // everything else on the main screen
     Item {
         id: mon
         x: Screen.virtualX; y: Screen.virtualY; width: Screen.width; height: Screen.height
-        Rectangle {
-            id: card
-            width: 360 * s; height: col.implicitHeight + 56 * s
-            x: (parent.width - width) / 2
-            y: (parent.height - height) / 2
-            radius: 16 * s
-            color: Qt.alpha(c.surf, 0.88)
-            border.color: c.line
-            SequentialAnimation {
-                id: shake
-                NumberAnimation { target: card; property: "x"; to: card.x - 10 * s; duration: 50 }
-                NumberAnimation { target: card; property: "x"; to: card.x + 10 * s; duration: 60 }
-                NumberAnimation { target: card; property: "x"; to: (mon.width - card.width) / 2; duration: 50 }
+        // narrow or upright screens get the sign-in alone
+        readonly property bool wide: width >= 980 * s
+        readonly property real side: wide ? Math.min(520 * s, width * 0.42) : width
+
+        // ── left: the mark and the time ────────────────────────────────────────────────
+        Row {
+            visible: mon.wide
+            x: 40 * s; y: 36 * s; spacing: 12 * s
+            Rectangle {
+                width: 40 * s; height: width; radius: width / 2; color: c.accent
+                Text { anchors.centerIn: parent; text: "侍"; color: c.onAccent; font.pixelSize: 18 * s; font.weight: Font.DemiBold }
             }
             Column {
-                id: col
-                anchors.centerIn: parent
-                width: parent.width - 56 * s
-                spacing: 16 * s
-                Rectangle {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    width: 76 * s; height: width; radius: width / 2; color: c.raised; border.color: c.line
-                    Text { anchors.centerIn: parent; text: (core.users[w.user] || "?").charAt(0).toUpperCase(); color: c.accent; font.pixelSize: 30 * s; font.weight: Font.DemiBold }
-                }
-                Row {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    spacing: 10 * s
-                    Button {
-                        visible: core.users.length > 1; width: 32 * s; height: 32 * s
-                        Accessible.name: "Previous user"
-                        onClicked: w.user = (w.user + core.users.length - 1) % core.users.length
-                        background: Rectangle { radius: 8 * s; color: parent.hovered ? c.raised : "transparent" }
-                        contentItem: Text { text: "‹"; color: c.dim; font.pixelSize: 20 * s; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                    }
-                    TextInput {
-                        id: name
-                        visible: core.users.length === 0
-                        width: 200 * s; color: c.text; font.pixelSize: 18 * s; horizontalAlignment: Text.AlignHCenter
-                        Text { anchors.fill: parent; visible: !parent.text; text: "user name"; color: c.dim; font.pixelSize: 18 * s; horizontalAlignment: Text.AlignHCenter }
-                    }
-                    Text { visible: core.users.length > 0; text: core.users[w.user] || ""; color: c.text; font.pixelSize: 18 * s; font.weight: Font.DemiBold; anchors.verticalCenter: parent.verticalCenter }
-                    Button {
-                        visible: core.users.length > 1; width: 32 * s; height: 32 * s
-                        Accessible.name: "Next user"
-                        onClicked: w.user = (w.user + 1) % core.users.length
-                        background: Rectangle { radius: 8 * s; color: parent.hovered ? c.raised : "transparent" }
-                        contentItem: Text { text: "›"; color: c.dim; font.pixelSize: 20 * s; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                    }
-                }
-                Field {
-                    id: pw
-                    width: parent.width; height: 48 * s
-                    echoMode: w.question !== "" && !w.questionSecret ? TextInput.Normal : TextInput.Password
-                    placeholderText: core.busy ? "Checking…" : (w.question !== "" ? w.question : "Password")
-                    focus: true
-                    enabled: !core.busy
-                    rightPadding: 48 * s
-                    font.pixelSize: 16 * s
-                    Accessible.name: "Password"
-                    Component.onCompleted: forceActiveFocus()
-                    onAccepted: go.clicked()
-                    background: Rectangle { radius: 12 * s; color: c.field; border.color: w.bad ? "#C8503F" : c.accent; border.width: 2 }
-                    Button {
-                        id: go
-                        anchors.right: parent.right; anchors.rightMargin: 5 * s; anchors.verticalCenter: parent.verticalCenter
-                        width: 38 * s; height: 38 * s
-                        Accessible.name: "Sign in"
-                        enabled: !core.busy
-                        onClicked: {
-                            w.msg = ""; w.bad = false
-                            if (w.question !== "") { var a = pw.text; pw.text = ""; core.answer(a) }
-                            else { var p = pw.text; pw.text = ""; core.login(core.users.length ? core.users[w.user] : name.text, p, w.session) }
-                        }
-                        background: Rectangle { radius: 9 * s; color: c.accent }
-                        contentItem: Icon { name: "right"; tint: c.onAccent; size: 18 * s; anchors.centerIn: parent }
-                    }
-                }
-                Row {
-                    width: parent.width; spacing: 8 * s
-                    Button {
-                        width: parent.width; height: 36 * s
-                        Accessible.name: "Session: " + core.sessions[w.session]
-                        onClicked: w.session = (w.session + 1) % core.sessions.length
-                        background: Rectangle { radius: 9 * s; color: parent.hovered ? c.raised : "transparent"; border.color: c.line }
-                        contentItem: Text { text: core.sessions[w.session] + (core.sessions.length > 1 ? "   ›" : ""); color: c.dim; font.pixelSize: 13 * s; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                    }
-                }
-                Text {
-                    width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
-                    text: w.msg || (w.question !== "" ? w.question : "Type your password and press Enter.")
-                    color: w.bad ? c.text : c.dim; font.pixelSize: 13 * s; font.weight: w.bad ? Font.DemiBold : Font.Normal
-                }
+                anchors.verticalCenter: parent.verticalCenter
+                Text { text: "Samurai"; color: c.text; font.pixelSize: 17 * s; font.weight: Font.DemiBold }
+                Text { text: "サムライ"; color: c.dim; font.pixelSize: 11 * s; font.letterSpacing: 2 * s }
             }
         }
-        // time, bottom left
-        Column {
-            x: 56 * s; anchors.bottom: parent.bottom; anchors.bottomMargin: 52 * s
-            Text { id: clock; text: core.clock(); color: c.text; font.pixelSize: 76 * s; font.weight: Font.DemiBold }
-            Text { id: date; text: core.date(); color: c.text; font.pixelSize: 18 * s }
+        Rectangle {
+            visible: mon.wide
+            x: 40 * s; anchors.bottom: parent.bottom; anchors.bottomMargin: 40 * s
+            width: Math.max(timeCol.implicitWidth + 52 * s, 360 * s); height: timeCol.implicitHeight + 44 * s
+            radius: 14 * s; color: Qt.alpha(c.chrome, 0.94); border.color: c.line
+            Column {
+                id: timeCol
+                x: 26 * s; anchors.verticalCenter: parent.verticalCenter; spacing: 4 * s
+                Text { id: clock; text: core.clock(); color: c.text; font.pixelSize: 64 * s; font.weight: Font.DemiBold; font.letterSpacing: -1 * s }
+                Text { id: date; text: core.date(); color: c.dim; font.pixelSize: 15 * s }
+                Text { visible: wifi.available; text: wifi.current ? "Wi-Fi · " + wifi.current : "Wi-Fi · not connected"; color: c.dim; font.pixelSize: 13 * s }
+            }
             Timer { interval: 10000; running: true; repeat: true; onTriggered: { clock.text = core.clock(); date.text = core.date() } }
         }
-        // power and Wi-Fi, bottom right
+
+        // ── right: signing in ──────────────────────────────────────────────────────────
         Rectangle {
-            id: corner
-            anchors.right: parent.right; anchors.rightMargin: 40 * s; anchors.bottom: parent.bottom; anchors.bottomMargin: 44 * s
-            width: pr.implicitWidth + 12 * s; height: 56 * s; radius: 12 * s; color: Qt.alpha(c.surf, 0.88); border.color: c.line
+            id: panel
+            anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom
+            width: mon.side
+            color: mon.wide ? Qt.alpha(c.surf, 0.97) : Qt.alpha(c.ground, 0.9)
+            Rectangle { visible: mon.wide; width: 1; height: parent.height; color: c.line }
+
+            Item {
+                id: card
+                width: Math.min(400 * s, parent.width - 64 * s); height: col.implicitHeight
+                x: (parent.width - width) / 2
+                y: Math.max(24 * s, (parent.height - height) / 2 - 40 * s)
+                SequentialAnimation {
+                    id: shake
+                    NumberAnimation { target: card; property: "x"; to: card.x - 10 * s; duration: 50 }
+                    NumberAnimation { target: card; property: "x"; to: card.x + 10 * s; duration: 60 }
+                    NumberAnimation { target: card; property: "x"; to: (panel.width - card.width) / 2; duration: 50 }
+                }
+                Column {
+                    id: col
+                    width: parent.width
+                    spacing: 18 * s
+                    // who
+                    Row {
+                        spacing: 16 * s
+                        Rectangle {
+                            width: 64 * s; height: width; radius: width / 2; color: c.soft
+                            Text { anchors.centerIn: parent; text: (core.users[w.user] || name.text || "?").charAt(0).toUpperCase(); color: c.accent; font.pixelSize: 26 * s; font.weight: Font.DemiBold }
+                        }
+                        Column {
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 2 * s
+                            Row {
+                                spacing: 6 * s
+                                Text { visible: core.users.length > 0; text: core.users[w.user] || ""; color: c.text; font.pixelSize: 26 * s; font.weight: Font.DemiBold }
+                                TextInput {
+                                    id: name
+                                    visible: core.users.length === 0
+                                    width: 220 * s; color: c.text; font.pixelSize: 24 * s; font.weight: Font.DemiBold
+                                    Accessible.name: "User name"
+                                    onAccepted: pw.forceActiveFocus()
+                                    Text { anchors.fill: parent; visible: !parent.text; text: "user name"; color: c.dim; font: parent.font }
+                                }
+                            }
+                            Text { text: "おかえりなさい · Welcome back"; color: c.dim; font.pixelSize: 13 * s }
+                        }
+                    }
+                    Row {
+                        visible: core.users.length > 1
+                        spacing: 6 * s
+                        Repeater {
+                            model: [["‹  Previous", -1], ["Next  ›", 1]]
+                            Button {
+                                required property var modelData
+                                height: 36 * s; width: implicitContentWidth + 28 * s
+                                Accessible.name: modelData[1] < 0 ? "Previous user" : "Next user"
+                                onClicked: w.user = (w.user + core.users.length + modelData[1]) % core.users.length
+                                background: Rectangle { radius: height / 2; color: parent.hovered ? c.raised : "transparent"; border.color: c.line }
+                                contentItem: Text { text: modelData[0]; color: c.text; font.pixelSize: 13 * s; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                            }
+                        }
+                    }
+                    // the password (or what the system asks)
+                    Column {
+                        width: parent.width; spacing: 6 * s
+                        Text { text: w.question !== "" ? w.question : "パスワード Password"; color: c.text; font.pixelSize: 13 * s; font.weight: Font.DemiBold; elide: Text.ElideRight; width: parent.width }
+                        Field {
+                            id: pw
+                            width: parent.width; height: 52 * s
+                            echoMode: w.question !== "" && !w.questionSecret ? TextInput.Normal : TextInput.Password
+                            placeholderText: core.busy ? "Checking…" : ""
+                            focus: true
+                            enabled: !core.busy
+                            font.pixelSize: 16 * s
+                            leftPadding: 16 * s
+                            Accessible.name: "Password"
+                            Component.onCompleted: forceActiveFocus()
+                            onAccepted: w.signIn()
+                            background: Rectangle { radius: 10 * s; color: c.chrome; border.color: w.bad ? "#C8503F" : c.accent; border.width: 2 }
+                        }
+                    }
+                    Button {
+                        id: go
+                        width: parent.width; height: 52 * s
+                        Accessible.name: "Sign in"
+                        enabled: !core.busy
+                        onClicked: w.signIn()
+                        background: Rectangle { radius: height / 2; color: c.accent; opacity: parent.enabled ? (parent.hovered ? 0.92 : 1) : 0.6 }
+                        contentItem: Text { text: core.busy ? "確認中 Checking…" : "ログイン Sign in"; color: c.onAccent; font.pixelSize: 15 * s; font.weight: Font.DemiBold; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                    }
+                    Text {
+                        width: parent.width; wrapMode: Text.Wrap
+                        text: w.msg || "Type your password and press Enter, or touch your security key."
+                        color: w.bad ? c.text : c.dim; font.pixelSize: 13 * s; font.weight: w.bad ? Font.DemiBold : Font.Normal
+                    }
+                    // which desktop: pills, the one picked last is picked
+                    Column {
+                        visible: core.sessions.length > 1
+                        width: parent.width; spacing: 8 * s
+                        Text { text: "セッション Session"; color: c.text; font.pixelSize: 13 * s; font.weight: Font.DemiBold }
+                        Rectangle {
+                            width: parent.width; height: sessFlow.implicitHeight + 8 * s
+                            radius: Math.min(height / 2, 28 * s); color: c.chrome; border.color: c.line
+                            Flow {
+                                id: sessFlow
+                                x: 4 * s; y: 4 * s; width: parent.width - 8 * s; spacing: 4 * s
+                                Repeater {
+                                    model: core.sessions
+                                    Button {
+                                        required property var modelData
+                                        required property int index
+                                        readonly property bool on: w.session === index
+                                        height: 44 * s
+                                        width: core.sessions.length <= 2 ? (sessFlow.width - 4 * s) / 2 : implicitContentWidth + 32 * s
+                                        Accessible.name: "Session: " + modelData
+                                        Accessible.checked: on
+                                        onClicked: w.session = index
+                                        background: Rectangle { radius: height / 2; color: parent.on ? c.accent : (parent.hovered ? c.raised : "transparent") }
+                                        contentItem: Text { text: modelData; color: parent.on ? c.onAccent : c.text; font.pixelSize: 14 * s; font.weight: Font.DemiBold; elide: Text.ElideRight; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // power and Wi-Fi: words in pills, at the foot
             Row {
-                id: pr; anchors.centerIn: parent; spacing: 4 * s
+                id: corner
+                anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 32 * s
+                spacing: 8 * s
                 Button {
                     id: wifiBtn
                     visible: wifi.available
-                    width: visible ? 44 * s : 0; height: 44 * s
+                    height: 44 * s; width: visible ? implicitContentWidth + 32 * s : 0
                     Accessible.name: "Wi-Fi"
-                    ToolTip.visible: hovered; ToolTip.text: wifi.current ? "Wi-Fi: " + wifi.current : "Wi-Fi"
                     onClicked: { wifiPanel.visible = !wifiPanel.visible; if (wifiPanel.visible) wifi.refresh() }
-                    background: Rectangle { radius: 9 * s; color: parent.hovered || wifiPanel.visible ? c.raised : "transparent" }
-                    contentItem: Icon { name: "wifi"; tint: wifi.current ? c.accent : c.text; size: 19 * s; anchors.centerIn: parent }
+                    background: Rectangle { radius: height / 2; color: parent.hovered || wifiPanel.visible ? c.raised : "transparent"; border.color: c.line }
+                    contentItem: Text { text: "Wi-Fi"; color: wifi.current ? c.accent : c.text; font.pixelSize: 14 * s; font.weight: Font.DemiBold; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                 }
                 Repeater {
-                    model: [["restart", "Restart", "restart"], ["poweroff", "Power off", "power"]]
+                    model: [["restart", "Restart 再起動"], ["poweroff", "Power off 電源"]]
                     Button {
                         required property var modelData
-                        width: 44 * s; height: 44 * s
+                        height: 44 * s; width: implicitContentWidth + 32 * s
                         Accessible.name: modelData[1]
-                        ToolTip.visible: hovered; ToolTip.text: modelData[1]
                         onClicked: core.power(modelData[0])
-                        background: Rectangle { radius: 9 * s; color: parent.hovered ? c.raised : "transparent" }
-                        contentItem: Icon { name: modelData[2]; tint: c.text; size: 19 * s; anchors.centerIn: parent }
+                        background: Rectangle { radius: height / 2; color: parent.hovered ? c.raised : "transparent"; border.color: c.line }
+                        contentItem: Text { text: modelData[1]; color: c.text; font.pixelSize: 14 * s; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                     }
                 }
             }
-        }
         // Wi-Fi before logging in: compact, above its button
         Rectangle {
             id: wifiPanel
             visible: false
-            anchors.right: corner.right; anchors.bottom: corner.top; anchors.bottomMargin: 8 * s
+            anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: corner.top; anchors.bottomMargin: 10 * s
             width: 300 * s; height: wcol.implicitHeight + 20 * s
-            radius: 12 * s; color: Qt.alpha(c.surf, 0.96); border.color: c.line
+            radius: 14 * s; color: c.raised; border.color: c.line
             property string pick: ""
             Component.onCompleted: if (openAtStart.indexOf("wifi") === 0) { visible = true; wifi.refresh(); pickLater.start() }
             Timer { id: pickLater; interval: 400; onTriggered: { var p = openAtStart.split(":")[1]; if (p) { for (var i = 0; i < wifi.nets.length; i++) if (wifi.nets[i].ssid === p) { wifiPanel.pick = p; wifiPanel.preset = wifi.nets[i].campus } } } }
@@ -270,6 +332,7 @@ Window {
                     text: wifi.note; color: wifi.bad ? "#E0705A" : c.dim; font.pixelSize: 11.5 * s
                 }
             }
+        }
         }
     }
 }

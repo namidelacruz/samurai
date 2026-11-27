@@ -265,37 +265,55 @@ impl Wm {
         self.lock.drawn_minute = h * 60 + mi;
         // the face goes on the monitor with the pointer; the others only show the clock
         let mon = self.pointer_monitor();
+        // the same face as the login screen (Sakura): the time in a card on the left, the
+        // password on a panel to the right; other screens only show the time
+        let chrome = if th.night { Rgba::hex(0x1F2228) } else { Rgba::hex(0xF2EFE9) };
         for m in &self.monitors {
             let main = *m == mon;
-            let (cx, cy) = (m.x as f32 + m.w as f32 / 2.0, m.y as f32 + m.h as f32 / 2.0);
+            let wide = m.w as f32 >= 980.0 * s;
             let clock = format!("{h:02}:{mi:02}");
-            f.draw(&mut px, Face::UiBold, 76.0 * s, m.x as f32 + 56.0 * s, (m.y + m.h) as f32 - 150.0 * s, th.text, &clock);
-            f.draw(&mut px, Face::Ui, 18.0 * s, m.x as f32 + 58.0 * s, (m.y + m.h) as f32 - 58.0 * s, th.text, &date);
+            if wide || !main {
+                let cw = (f.measure(Face::UiBold, 64.0 * s, &clock).max(f.measure(Face::Ui, 15.0 * s, &date)) + 52.0 * s).max(360.0 * s);
+                let chh = 128.0 * s;
+                let (cx0, cy0) = (m.x as f32 + 40.0 * s, (m.y + m.h) as f32 - 40.0 * s - chh);
+                draw::rrect(&mut px, cx0, cy0, cw, chh, 14.0 * s, chrome.with_alpha(240));
+                draw::rrect_line(&mut px, cx0, cy0, cw, chh, 14.0 * s, th.line, 1.0);
+                f.draw(&mut px, Face::UiBold, 64.0 * s, cx0 + 26.0 * s, cy0 + 16.0 * s, th.text, &clock);
+                f.draw(&mut px, Face::Ui, 15.0 * s, cx0 + 26.0 * s, cy0 + 94.0 * s, th.dim, &date);
+            }
             if !main {
                 continue;
             }
-            let (cw, ch) = (360.0 * s, 300.0 * s);
+            let side = if wide { (520.0 * s).min(m.w as f32 * 0.42) } else { m.w as f32 };
+            let (px0, pw) = ((m.x + m.w) as f32 - side, side);
+            draw::rrect(&mut px, px0, m.y as f32, pw, m.h as f32, 0.0, th.surf.with_alpha(if wide { 248 } else { 230 }));
+            if wide {
+                draw::rrect(&mut px, px0, m.y as f32, 1.0, m.h as f32, 0.0, th.line);
+            }
+            let cw = (400.0 * s).min(pw - 64.0 * s);
             let shake = self.lock.shake.map(|t| t.elapsed().as_secs_f32()).filter(|t| *t < 0.4).map(|t| (t * 50.0).sin() * 10.0 * s * (1.0 - t / 0.4)).unwrap_or(0.0);
-            let (x0, y0) = (cx - cw / 2.0 + shake, cy - ch / 2.0);
-            draw::rrect(&mut px, x0, y0, cw, ch, 16.0 * s, th.glass);
-            draw::rrect_line(&mut px, x0, y0, cw, ch, 16.0 * s, th.line, 1.0);
+            let x0 = px0 + (pw - cw) / 2.0 + shake;
+            let y0 = m.y as f32 + m.h as f32 / 2.0 - 150.0 * s;
             let user = self.status.get().user;
             let initial = user.chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_default();
-            draw::circle(&mut px, cx + shake, y0 + 70.0 * s, 38.0 * s, th.raised);
-            f.draw_centered(&mut px, Face::UiBold, 30.0 * s, cx + shake, y0 + 50.0 * s, th.accent, &initial);
-            f.draw_centered(&mut px, Face::UiBold, 18.0 * s, cx + shake, y0 + 120.0 * s, th.text, &user);
-            let (fx, fy, fw, fh) = (x0 + 28.0 * s, y0 + 164.0 * s, cw - 56.0 * s, 48.0 * s);
-            draw::rrect(&mut px, fx, fy, fw, fh, 12.0 * s, if th.night { Rgba::hex(0x14161A) } else { Rgba::hex(0xFFFFFF) });
-            draw::rrect_line(&mut px, fx, fy, fw, fh, 12.0 * s, if self.lock.failed { Rgba(200, 80, 70, 255) } else { th.accent }, 2.0);
+            draw::circle(&mut px, x0 + 32.0 * s, y0 + 32.0 * s, 32.0 * s, th.soft);
+            f.draw_centered(&mut px, Face::UiBold, 26.0 * s, x0 + 32.0 * s, y0 + 15.0 * s, th.accent, &initial);
+            f.draw(&mut px, Face::UiBold, 26.0 * s, x0 + 80.0 * s, y0 + 6.0 * s, th.text, &f.fit(Face::UiBold, 26.0 * s, &user, cw - 80.0 * s));
+            f.draw(&mut px, Face::Ui, 13.0 * s, x0 + 80.0 * s, y0 + 42.0 * s, th.dim, "ロック中 · Locked");
+            let ly = y0 + 90.0 * s;
+            f.draw(&mut px, Face::UiBold, 13.0 * s, x0, ly, th.text, "パスワード Password");
+            let (fx, fy, fw, fh) = (x0, ly + 24.0 * s, cw, 52.0 * s);
+            draw::rrect(&mut px, fx, fy, fw, fh, 10.0 * s, chrome);
+            draw::rrect_line(&mut px, fx, fy, fw, fh, 10.0 * s, if self.lock.failed { Rgba(200, 80, 70, 255) } else { th.accent }, 2.0);
             let dots = self.lock.input.chars().count().min(24);
-            if dots == 0 {
-                f.draw(&mut px, Face::Ui, 15.0 * s, fx + 16.0 * s, fy + 14.0 * s, th.dim, if self.lock.busy.is_some() { "Checking…" } else { "Password" });
+            if dots == 0 && self.lock.busy.is_some() {
+                f.draw(&mut px, Face::Ui, 15.0 * s, fx + 16.0 * s, fy + 16.0 * s, th.dim, "確認中 Checking…");
             }
             for i in 0..dots {
                 draw::circle(&mut px, fx + 22.0 * s + i as f32 * 14.0 * s, fy + fh / 2.0, 4.0 * s, th.text);
             }
-            let msg = if self.lock.message.is_empty() { "Locked. Type your password and press Enter.".to_string() } else { self.lock.message.clone() };
-            f.draw_centered(&mut px, if self.lock.failed { Face::UiBold } else { Face::Ui }, 13.0 * s, cx + shake, fy + fh + 22.0 * s, if self.lock.failed { th.text } else { th.dim }, &f.fit(Face::Ui, 13.0 * s, &msg, cw - 40.0 * s));
+            let msg = if self.lock.message.is_empty() { "Type your password and press Enter.".to_string() } else { self.lock.message.clone() };
+            f.draw(&mut px, if self.lock.failed { Face::UiBold } else { Face::Ui }, 13.0 * s, x0, fy + fh + 16.0 * s, if self.lock.failed { th.text } else { th.dim }, &f.fit(Face::Ui, 13.0 * s, &msg, cw));
         }
         self.comp.set_layer(&self.conn, "lock", &px, 0, 0, 1.0);
     }
